@@ -50,7 +50,7 @@ public:
         int JobId;
         ExternalCommand* cmd;
         ~JobEntry() { //TODO check if you really need to delete cmd
-            delete cmd;
+//            delete cmd;
         }
 
         JobEntry(ExternalCommand* the_command, int job_id, pid_t pid) : pid(pid), JobId(job_id), cmd(the_command) {}

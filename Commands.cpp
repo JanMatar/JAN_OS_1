@@ -122,9 +122,11 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
 void SmallShell::executeCommand(const char *cmd_line) {
     // TODO: Add your implementation here
     // for example:
-    // Command* cmd = CreateCommand(cmd_line);
-    // cmd->execute();
-    // Please note that you must fork smash process for some commands (e.g., external commands....)
+     Command* cmd = CreateCommand(cmd_line);
+     if (cmd) {
+         cmd->execute();
+     }
+     // Please note that you must fork smash process for some commands (e.g., external commands....)
 }
 
 Command::Command(const char *cmd_line) : cmd_line(cmd_line), arguments() {
@@ -147,7 +149,7 @@ Command::~Command() {}
 ExternalCommand::ExternalCommand(const char *cmd_line, JobsList *jobsList) : Command(cmd_line), jobs_list(jobsList) {
     //also using the base class's constructor
     if (isCommandComplex()) {
-        is_complex = false;
+        is_complex = true;
     }
     if (_isBackgroundComamnd(cmd_line)) {
         is_background = true;
@@ -218,7 +220,7 @@ void ExternalCommand::execute() { //TODO test extensively, also some code duplic
 
 bool ExternalCommand::isCommandComplex() {
     for (auto &argument: arguments) {
-        if (argument.find('*') || argument.find('?')) {
+        if (argument.find('*') != string::npos || argument.find('?') != string::npos) {
             return true;
         }
     }
@@ -306,7 +308,7 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
 
 void ChangeDirectoryCommand::execute() {}
 
-JobsList::JobsList() : number_of_jobs(0), MaxId(0) {}
+JobsList::JobsList() : MaxId(0), number_of_jobs(0) {}
 
 JobsList::~JobsList() {
     for (auto &it: JobList) {
