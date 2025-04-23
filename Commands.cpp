@@ -313,7 +313,7 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
 
 void ChangeDirectoryCommand::execute() {}
 
-JobsList::JobsList() : MaxId(0), number_of_jobs(0) {}
+JobsList::JobsList() : MaxId(0), number_of_jobs(0), JobList() {}
 
 JobsList::~JobsList() {
     for (auto &it: JobList) {
@@ -383,8 +383,11 @@ void JobsList::killAllJobs() {
 
 void JobsList::removeFinishedJobs() {
     int num;
+    if(JobList.empty()){
+        return;
+    }
     for (auto a = JobList.begin(); a != JobList.end();) {
-        num = waitpid((*a)->pid, NULL, WNOHANG);
+        num = waitpid(a.operator*()->pid, NULL, WNOHANG);
         if (num == -1) {
             perror("smash error: waitpid failed");
             ++a;
@@ -455,7 +458,7 @@ void QuitCommand::execute() {
     exit(0);
 }
 
-KillCommand::KillCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(cmd_line), Jobs(Jobs){
+KillCommand::KillCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(cmd_line), Jobs(jobs){
     Jobs->removeFinishedJobs();
     if(arguments.size() != 3){
         cerr << "smash error: kill: invalid arguments" << endl;
@@ -523,7 +526,7 @@ UnAliasCommand::UnAliasCommand(const char *cmd_line, SmallShell *shell) : BuiltI
     if(arguments.size() == 1){
         cerr << "smash error: unalias: not enough arguments" << endl;
     }
-    for(int i = 1; i < arguments.size(); i++){
+    for(unsigned int i = 1; i < arguments.size(); i++){
         if(shell->getaliases().erase(arguments[i]) == 0){
             cerr << "smash error: unalias: " << string(arguments[i]) << " alias does not exist" << endl;
             return;
