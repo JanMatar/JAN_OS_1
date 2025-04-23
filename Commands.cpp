@@ -105,7 +105,7 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     } else if (firstWord == "jobs") {
         return new JobsCommand(cmd_line, Jobs);
     } else if (firstWord == "fg") {
-        return new fgcommand(cmd_line, Jobs);
+        return new fgCommand(cmd_line, Jobs);
     } else if (firstWord == "quit") {
         return new QuitCommand(cmd_line, Jobs);
     } else if (!firstWord.empty()) { ///external command
@@ -324,8 +324,8 @@ void JobsList::addJob(pid_t pid, ExternalCommand *cmd, bool isStopped) {
 
 void JobsList::printJobsList() {
     removeFinishedJobs();
-    for (auto &a: JobList) {
-        cout << "[" << a->JobId << "]" << a->cmd->getCmdLine() << endl;
+    for (auto &job: JobList) {
+        cout << "[" << job->JobId << "]" << job->cmd->getCmdLine() << endl;
     }
 }
 
@@ -401,7 +401,7 @@ JobsCommand::JobsCommand(const char *cmd_line, JobsList *Jobs) : BuiltInCommand(
 
 void JobsCommand::execute() { m_JobsList->printJobsList(); }
 
-fgcommand::fgcommand(const char *cmd_line, JobsList *Jobs) : BuiltInCommand(cmd_line), Jobs(Jobs) {
+fgCommand::fgCommand(const char *cmd_line, JobsList *Jobs) : BuiltInCommand(cmd_line), Jobs(Jobs) { //TODO may need to try and catch
     JobId = 0;
     if (arguments.size() <= 2) {
         if (arguments.size() == 1 && Jobs->getNumOfJobs() == 0) {
@@ -427,15 +427,16 @@ fgcommand::fgcommand(const char *cmd_line, JobsList *Jobs) : BuiltInCommand(cmd_
     }
 }
 
-void fgcommand::execute() {
+void fgCommand::execute() { //TODO also may need fgPid for signal handling
     if (pid == 0) {
         return;
     }
     cout << Jobs->getJobById(JobId)->cmd->getCmdLine() << " " << pid << endl;
     waitpid(pid, nullptr, 0);
+    Jobs->removeJobById(JobId);
 }
 
-QuitCommand::QuitCommand(const char *cmd_line, JobsList *jobs) : BuiltInCommand(cmd_line), Jobs(Jobs) {}
+QuitCommand::QuitCommand(const char *cmd_line, JobsList *jobs) : BuiltInCommand(cmd_line), Jobs(jobs) {}
 
 void QuitCommand::execute() {
     Jobs->removeFinishedJobs();

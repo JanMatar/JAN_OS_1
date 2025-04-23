@@ -281,17 +281,17 @@ public:
     virtual ~JobsCommand() = default;
 };
 
-class fgcommand : public BuiltInCommand {
+class fgCommand : public BuiltInCommand {
 private:
     JobsList* Jobs;
     pid_t pid;
     int JobId;
 public:
-    fgcommand(const char *cmd_line, JobsList *Jobs);
+    fgCommand(const char *cmd_line, JobsList *Jobs);
 
     void execute() override;
 
-    virtual ~fgcommand() = default;
+    virtual ~fgCommand() = default;
 };
 
 
