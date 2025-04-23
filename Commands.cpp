@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <unistd.h>
 #include "Commands.h"
+#include <regex>
 
 using namespace std;
 
@@ -85,6 +86,10 @@ SmallShell::~SmallShell() {
     if (Previous_Path != nullptr) {
         delete[] Previous_Path;
     }
+}
+
+map<string ,string> SmallShell::getaliases(){
+    return Aliases;
 }
 
 /**
@@ -449,3 +454,81 @@ void QuitCommand::execute() {
     }
     exit(0);
 }
+
+KillCommand::KillCommand(const char *cmd_line, JobsList *jobs): BuiltInCommand(cmd_line), Jobs(Jobs){
+    Jobs->removeFinishedJobs();
+    if(arguments.size() != 3){
+        cerr << "smash error: kill: invalid arguments" << endl;
+    }
+    int num = 0;
+    try {
+        num = stoi(arguments[2]);
+    } catch(...) {
+        cerr << "smash error: kill: invalid arguments" << endl;
+    }
+    JobsList::JobEntry* Job = Jobs->getJobById(num);
+    if(arguments[1][0] != '-'){
+        cerr << "smash error: kill: invalid arguments" << endl;
+    } else if(Job == nullptr) {
+        cerr << "smash error: kill: job-id " << stoi(arguments[2]) << " does not exist" << endl;
+    } else {
+        if(kill(Job->pid ,num) == -1){
+            perror("smash error: kill failed");
+        } else{
+            cout << "signal number " << num << " was sent to pid " << Job->pid << endl;
+        }
+    }
+}
+
+void KillCommand::execute() {}
+
+AliasCommand::AliasCommand(const char *cmd_line, SmallShell* shell) : BuiltInCommand(cmd_line) , shell(shell){
+ if(arguments.size() > 2){
+     cerr << "smash error: alias: invalid alias format" << endl;
+ }
+ if(arguments.size() == 2){
+     name = arguments[1].substr(0, arguments[1].find_first_of("="));
+     command = arguments[1].substr(arguments[1].find_first_of("=") + 2, arguments[1].size() - arguments[1].find_first_of("=") - 3);
+     string cmdl = string(cmd_line);
+     smatch alias_regex;
+     regex format(R"(^alias ([a-zA-Z0-9]+)='([^']*)'$)");
+     if(!(regex_match(cmdl, format))){
+         cerr << "smash error: alias: invalid alias format"  << endl;
+         return;
+     }
+     for(auto& e : reserved_in_bash){
+         if(name == e){
+             cerr << "smash error: alias:" << name << "already exists or is a reserved command" <<endl;
+             return;
+         }
+     }
+     for(auto& e: shell->getaliases()){
+         if(name == e.first){
+             cerr << "smash error: alias:" << name << "already exists or is a reserved command" <<endl;
+             return;
+         }
+     }
+     shell->getaliases()[name] = command;
+ }
+ if(arguments.size() == 1){
+     for(auto& e : shell->getaliases()){
+         cout << e.first << "='" << e.second << "'" << endl;
+     }
+ }
+}
+
+void AliasCommand::execute() {}
+
+UnAliasCommand::UnAliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCommand(cmd_line) , shell(shell){
+    if(arguments.size() == 1){
+        cerr << "smash error: unalias: not enough arguments" << endl;
+    }
+    for(int i = 1; i < arguments.size(); i++){
+        if(shell->getaliases().erase(arguments[i]) == 0){
+            cerr << "smash error: unalias: " << string(arguments[i]) << " alias does not exist" << endl;
+            return;
+        }
+    }
+}
+
+void UnAliasCommand::execute() {}
