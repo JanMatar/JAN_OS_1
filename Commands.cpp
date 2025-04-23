@@ -5,6 +5,7 @@
 #include <sstream>
 #include <sys/wait.h>
 #include <iomanip>
+#include <unistd.h>
 #include "Commands.h"
 
 using namespace std;
@@ -107,6 +108,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new fgcommand(cmd_line, Jobs);
     } else if (firstWord == "quit") {
         return new QuitCommand(cmd_line, Jobs);
+    } else if (!firstWord.empty()) { ///external command
+        return new ExternalCommand(cmd_line, Jobs);
     }
 //  else if ...
 //  .....
@@ -141,8 +144,89 @@ Command::Command(const char *cmd_line) : cmd_line(cmd_line), arguments() {
 
 Command::~Command() {}
 
-ExternalCommand::ExternalCommand(const char *cmd_line) : Command(cmd_line) {
+ExternalCommand::ExternalCommand(const char *cmd_line, JobsList *jobsList) : Command(cmd_line), jobs_list(jobsList) {
     //also using the base class's constructor
+    if (isCommandComplex()) {
+        is_complex = false;
+    }
+    if (_isBackgroundComamnd(cmd_line)) {
+        is_background = true;
+    }
+}
+
+void ExternalCommand::execute() { //TODO test extensively, also some code duplication
+    if (!is_complex) {
+        pid_t pid = fork();
+        if (pid == -1) {
+            perror("smash error: fork failed");
+            return;
+        } else if (pid == 0) { //child
+            pid_t grpPid = setpgrp();
+            if (grpPid == -1) {
+                perror("smash error: setpgrp failed");
+                exit(1);
+            } else { // non-complex execution
+
+                //turning the arguments from the vector of string into a char* array
+                vector<char *> args;
+                for (auto &arg: arguments) {
+                    args.push_back(strdup(arg.c_str()));
+                }
+
+                //execvp is one of the functions of the exec family, and it automatically searches the PATH environment
+                execvp(args[0], args.data());
+                perror("smash error: execvp failed");
+                exit(1);
+            }
+        } else { //father
+            if (isCommandBackground()) {
+                jobs_list->addJob(pid, this);
+            } else { //TODO may need to add foreground pid for signal handling
+                if (waitpid(pid, nullptr, 0) == -1){
+                    perror("smash error: waitpid failed");
+                }
+            }
+        }
+    } else { //complex execution
+        pid_t pid = fork();
+        if (pid == -1) {
+            perror("smash error: fork failed");
+            return;
+        } else if (pid == 0) { //child
+            pid_t grpPid = setpgrp();
+            if (grpPid == -1) {
+                perror("smash error: setpgrp failed");
+                exit(1);
+            } else {
+                string cmd_line = this->getCmdLine();
+                const char *bash_args[3] = {"-c", cmd_line.c_str(), nullptr};
+                execvp("/bin/bash", const_cast<char *const *>(bash_args));
+                perror("smash error: execvp failed");
+                exit(1);
+            }
+        } else { //father
+            if (isCommandBackground()) {
+                jobs_list->addJob(pid, this);
+            } else { //TODO may need to add foreground pid for signal handling
+                if (waitpid(pid, nullptr, 0) == -1){
+                    perror("smash error: waitpid failed");
+                }
+            }
+        }
+    }
+}
+
+bool ExternalCommand::isCommandComplex() {
+    for (auto &argument: arguments) {
+        if (argument.find('*') || argument.find('?')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ExternalCommand::isCommandBackground() const {
+    return is_background;
 }
 
 BuiltInCommand::BuiltInCommand(const char *cmd_line) : Command(cmd_line) {
@@ -225,7 +309,7 @@ void ChangeDirectoryCommand::execute() {}
 JobsList::JobsList() : number_of_jobs(0), MaxId(0) {}
 
 JobsList::~JobsList() {
-    for (auto & it : JobList) {
+    for (auto &it: JobList) {
         delete it;
     }
 }

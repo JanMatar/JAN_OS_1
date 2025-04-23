@@ -49,7 +49,7 @@ public:
         pid_t pid;
         int JobId;
         ExternalCommand* cmd;
-        ~JobEntry() {
+        ~JobEntry() { //TODO check if you really need to delete cmd
             delete cmd;
         }
 
@@ -152,14 +152,25 @@ public:
 };
 
 class ExternalCommand : public Command {
+    JobsList *jobs_list;
+    bool is_background;
+    bool is_complex = false;
 
 public:
-    ExternalCommand(const char *cmd_line);
+    ExternalCommand(const char *cmd_line, JobsList *jobsList);
 
     virtual ~ExternalCommand() {
     }
 
     void execute() override;
+
+//    void turnComplex(){
+//        is_complex = true;
+//    }
+
+    bool isCommandComplex();
+
+    bool isCommandBackground() const;
 };
 
 
