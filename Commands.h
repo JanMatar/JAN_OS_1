@@ -6,6 +6,9 @@
 
 #include <vector>
 #include <string>
+#include <list>
+#include <memory>
+
 
 using namespace std;
 
@@ -30,12 +33,67 @@ public:
     // TODO: Add your extra methods if needed
 };
 
+class ExternalCommand;
+
+class JobsList {
+
+public:
+    class JobEntry {
+    public:
+        // TODO: Add your data members
+        pid_t pid;
+        int JobId;
+        ExternalCommand* cmd;
+        ~JobEntry() {
+            delete cmd;
+        }
+
+        JobEntry(ExternalCommand* Thecommand, int JobId, pid_t pid) : cmd(Thecommand), JobId(JobId), pid(pid) {}
+
+    };
+
+    // TODO: Add your data members
+    JobsList();
+
+    ~JobsList();
+
+    void addJob(pid_t pid, ExternalCommand *cmd, bool isStopped = false);
+
+    void printJobsList();
+
+    int getnumofjobs();
+
+    void killAllJobs();
+
+    void removeFinishedJobs();
+
+    JobEntry* getJobById(int jobId);
+
+    void removeJobById(int jobId);
+
+    int getMaxId();
+
+    void printallJobsforQUIT();
+
+    JobEntry *getLastJob(int *lastJobId);
+
+    JobEntry *getLastStoppedJob(int *jobId);
+
+    // TODO: Add extra methods or modify exisitng ones as needed
+private:
+    int MaxId;
+    vector<JobEntry*> JobList;
+    int numberofjobs;
+};
+
+
+
 class SmallShell {
 private:
     // TODO: Add your data members
     string prompt;
     char* Previous_Path;
-    Jobslist Jobs;
+    JobsList* Jobs;
 
 
     SmallShell();
@@ -90,6 +148,7 @@ public:
 class ExternalCommand : public Command {
 public:
     ExternalCommand(const char *cmd_line);
+    string cmd_line;
 
     virtual ~ExternalCommand() {
     }
@@ -195,71 +254,42 @@ public:
 };
 
 
+class JobsCommand : public BuiltInCommand {
+    JobsList* m_JobsList;
+public:
+    JobsCommand(const char* cmd_line, JobsList* Jobs);
+
+    void execute() override;
+
+    virtual ~JobsCommand() = default;
+};
+
+class fgcommand : public BuiltInCommand {
+private:
+    JobsList* Jobs;
+    pid_t pid;
+    int JobId;
+public:
+    fgcommand(const char *cmd_line, JobsList *Jobs);
+
+    void execute() override;
+
+    virtual ~fgcommand() = default;
+};
 
 
-
-
-
-class JobsList;
-
-class QuitCommand : public BuiltInCommand {
-    // TODO: Add your data members public:
+class QuitCommand : public BuiltInCommand{
+private:
+    JobsList* Jobs;
+public:
     QuitCommand(const char *cmd_line, JobsList *jobs);
 
-    virtual ~QuitCommand() {
-    }
+    virtual ~QuitCommand() = default;
 
     void execute() override;
 };
 
 
-class JobsList {
-public:
-    class JobEntry {
-        // TODO: Add your data members
-        pid_t pid;
-        int JobId;
-        ExternalCommand* Thecommand;
-
-        JobEntry(ExternalCommand* Thecommand, int JobId, pid_t pid) : Thecommand(Thecommand), JobId(jobId), pid(pid) {}
-
-    };
-
-    // TODO: Add your data members
-public:
-    JobsList();
-
-    ~JobsList();
-
-    void addJob(pid_t pid, ExternalCommand *cmd, bool isStopped = false);
-
-    void printJobsList();
-
-    void killAllJobs();
-
-    void removeFinishedJobs();
-
-    JobEntry *getJobById(int jobId);
-
-    void removeJobById(int jobId);
-
-    JobEntry *getLastJob(int *lastJobId);
-
-    JobEntry *getLastStoppedJob(int *jobId);
-
-    // TODO: Add extra methods or modify exisitng ones as needed
-};
-
-class JobsCommand : public BuiltInCommand {
-    // TODO: Add your data members
-public:
-    JobsCommand(const char *cmd_line, JobsList *jobs);
-
-    virtual ~JobsCommand() {
-    }
-
-    void execute() override;
-};
 
 class KillCommand : public BuiltInCommand {
     // TODO: Add your data members

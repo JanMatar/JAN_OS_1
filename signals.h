@@ -4,3 +4,4 @@
 void ctrlCHandler(int sig_num);
 
 #endif //SMASH__SIGNALS_H_
+

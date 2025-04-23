@@ -90,27 +90,31 @@ SmallShell::~SmallShell(){
 * Creates and returns a pointer to Command class which matches the given command line (cmd_line)
 */
 Command *SmallShell::CreateCommand(const char *cmd_line) {
-  string cmd_s = _trim(string(cmd_line));
-  string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
+    string cmd_s = _trim(string(cmd_line));
+    string firstWord = cmd_s.substr(0, cmd_s.find_first_of(" \n"));
 
-  if (firstWord.compare("pwd") == 0) {
-    return new GetCurrentDirectory(cmd_line.c_str);
-  }
-  else if (firstWord.compare("showpid") == 0) {
-    return new ShowPidCommand(cmd_line.c_str);
-  }
-  else if (firstWord.compare("chprompt") == 0) {
-      return new ChangePromptCommand(cmd_line.c_str, this);
-  }
-  else if (firstWord.compare("cd") == 0) {
-      return new ChangeDirectoryCommand(cmd_line.c_str, this);
-  }
+    if (firstWord == "pwd") {
+        return new GetCurrentDirectory(cmd_line);
+    } else if (firstWord == "showpid") {
+        return new ShowPidCommand(cmd_line);
+    } else if (firstWord == "chprompt") {
+        return new ChangePromptCommand(cmd_line, this);
+    } else if (firstWord == "cd") {
+        return new ChangeDirectoryCommand(cmd_line, this);
+    } else if (firstWord == "jobs") {
+        return new JobsCommand(cmd_line, Jobs);
+    } else if (firstWord == "fg") {
+        return new fgcommand(cmd_line, Jobs);
+    }else if (firstWord == "quit") {
+        return new QuitCommand(cmd_line, Jobs);
+    }
 //  else if ...
 //  .....
 //  else {
 //    return new ExternalCommand(cmd_line);
 //  }
-    return nullptr;
+        return nullptr;
+    }
 }
 
 void SmallShell::executeCommand(const char *cmd_line) {
@@ -215,3 +219,145 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell*
 
 void ChangeDirectoryCommand::execute() {}
 
+JobsList::JobsList() : numberofjobs(0),MaxId(0){}
+
+JobsList::~JobsList() {
+    for(auto it=JobList.begin(); it!=JobList.end();++it)
+    {
+        delete *it;
+    }
+}
+
+void JobsList::addJob(pid_t pid, ExternalCommand *cmd, bool isStopped) {
+    removeFinishedJobs();
+    JobEntry* temp = new JobEntry(cmd, pid, MaxId);
+    JobList.push_back(temp);
+    MaxId++;
+    numberofjobs++;
+}
+
+void JobsList::printJobsList() {
+    removeFinishedJobs();
+    for(auto& a: JobList){
+        cout << "[" << a->JobId << "]" << a->cmd->cmd_line << endl;
+    }
+}
+
+int JobsList::getnumofjobs() {
+    return numberofjobs;
+}
+
+JobsList::JobEntry* JobsList::getJobById(int jobId){
+    for(auto a: JobList){
+        if(a->JobId == jobId){
+            return a;
+        }
+    }
+    return nullptr;
+}
+
+void JobsList::removeJobById(int jobId) {
+    for (auto a = JobList.begin(); a < JobList.end();) {
+        if ((*a)->JobId == jobId) {
+            delete (*a);
+            a = JobList.erase(a);
+            numberofjobs -= 1;
+            if (numberofjobs == 0) {
+                MaxId = 0;
+            } else {
+                MaxId = JobList[numberofjobs - 1]->JobId;
+            }
+        } else {
+            ++a;
+        }
+    }
+}
+
+void JobsList::printallJobsforQUIT() {
+    for (auto a: JobList) {
+        cout << a->pid << ": " << a->cmd << endl;
+    }
+}
+
+void JobsList::killAllJobs(){
+    for(auto It=JobList.begin(); It!=JobList.end();++It)
+    {
+        kill((*It)->pid,SIGKILL);
+        JobEntry* job=*It;
+        (*It)=nullptr;
+        delete job;
+    }
+}
+
+void JobsList::removeFinishedJobs() {
+    int num;
+    for (auto a = JobList.begin(); a != JobList.end();) {
+        num = waitpid((*a)->pid, NULL, WNOHANG);
+        if (num == -1) {
+            perror("smash error: waitpid failed");
+            ++a;
+        } else if (num == 0) {
+            ++a;
+        } else {
+            a = JobList.erase(a);
+            numberofjobs -= 1;
+            if (numberofjobs == 0) {
+                MaxId = 0;
+            } else {
+                MaxId = JobList[numberofjobs - 1]->JobId;
+            }
+        }
+    }
+}
+
+int JobsList::getMaxId() { return MaxId;}
+
+JobsCommand::JobsCommand(const char *cmd_line, JobsList *Jobs) : BuiltInCommand(cmd_line), m_JobsList(Jobs){}
+
+void JobsCommand::execute() {m_JobsList->printJobsList();}
+
+fgcommand::fgcommand(const char *cmd_line, JobsList *Jobs) :  BuiltInCommand(cmd_line), Jobs(Jobs){
+    JobId = 0;
+    if(arguments.size() <= 2){
+        if(arguments.size() == 1 && Jobs->getnumofjobs() == 0){
+            cerr << "smash error: fg: jobs list is empty";
+        } else if ( arguments.size() == 1){
+            pid = Jobs->getJobById(Jobs->getMaxId())->pid;
+            JobId = Jobs->getMaxId();
+        } else {
+            JobId = stoi(arguments[1]);
+            if(JobId <= 0){
+                cerr << "smash error: fg: invalid arguments" << endl;
+            }
+            JobsList::JobEntry* temp = Jobs->getJobById(JobId);
+            if(temp != nullptr){
+                pid = temp->pid;
+            } else {
+                cerr << "smash error: fg: job-id" << JobId << "does not exist";
+            }
+
+        }
+    } else {
+        cerr << "smash error: fg: invalid arguments" << endl;
+    }
+}
+
+void fgcommand::execute() {
+    if(pid == 0){
+        return;
+    }
+    cout << Jobs->getJobById(JobId)->cmd->cmd_line << " " << pid << endl;
+    waitpid(pid, nullptr, 0);
+}
+
+QuitCommand::QuitCommand(const char *cmd_line, JobsList *jobs) : BuiltInCommand(cmd_line), Jobs(Jobs){}
+
+void QuitCommand::execute() {
+    Jobs->removeFinishedJobs();
+    if (arguments[1] == "kill") {
+        cout << "sending SIGKILL signal to" << Jobs->getnumofjobs() << "jobs:" << endl;
+        Jobs->printallJobsforQUIT();
+        Jobs->killAllJobs();
+    }
+    exit(0);
+}
