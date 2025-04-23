@@ -6,6 +6,7 @@
 
 #include <vector>
 #include <string>
+#include <cstring>
 #include <list>
 #include <memory>
 
@@ -28,6 +29,10 @@ public:
 
     virtual void execute() = 0;
 
+    string getCmdLine() const{
+        return cmd_line;
+    }
+
     //virtual void prepare();
     //virtual void cleanup();
     // TODO: Add your extra methods if needed
@@ -48,7 +53,7 @@ public:
             delete cmd;
         }
 
-        JobEntry(ExternalCommand* Thecommand, int JobId, pid_t pid) : cmd(Thecommand), JobId(JobId), pid(pid) {}
+        JobEntry(ExternalCommand* the_command, int job_id, pid_t pid) : pid(pid), JobId(job_id), cmd(the_command) {}
 
     };
 
@@ -61,7 +66,7 @@ public:
 
     void printJobsList();
 
-    int getnumofjobs();
+    int getNumOfJobs() const;
 
     void killAllJobs();
 
@@ -73,7 +78,7 @@ public:
 
     int getMaxId();
 
-    void printallJobsforQUIT();
+    void printAllJobsForQUIT();
 
     JobEntry *getLastJob(int *lastJobId);
 
@@ -83,7 +88,7 @@ public:
 private:
     int MaxId;
     vector<JobEntry*> JobList;
-    int numberofjobs;
+    int number_of_jobs;
 };
 
 
@@ -122,7 +127,8 @@ public:
         if(Previous_Path != nullptr){
             delete[] Previous_Path;
         }
-        Previous_Path = new char[strlen(newPath) + 1];
+        int prev_path_len = strlen(newPath);
+        Previous_Path = new char[prev_path_len + 1];
         strcpy(Previous_Path, newPath);
     }
 
@@ -146,9 +152,9 @@ public:
 };
 
 class ExternalCommand : public Command {
+
 public:
     ExternalCommand(const char *cmd_line);
-    string cmd_line;
 
     virtual ~ExternalCommand() {
     }
