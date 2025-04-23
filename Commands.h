@@ -8,14 +8,16 @@
 #include <string>
 #include <cstring>
 #include <list>
+#include <map>
 #include <memory>
+#include <set>
 
 
 using namespace std;
 
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
-#define PATH_SIZE (4096)
+#define PATH_SIZE (200)
 
 class Command {
     // TODO: Add your data members
@@ -99,6 +101,7 @@ private:
     string prompt;
     char* Previous_Path;
     JobsList* Jobs;
+    map<string, string> Aliases;
 
 
     SmallShell();
@@ -117,6 +120,7 @@ public:
 
     ~SmallShell();
 
+    map<string ,string> getaliases();
     void executeCommand(const char *cmd_line);
 
     void setPrompt (const string new_prompt){
@@ -222,7 +226,7 @@ class ChangePromptCommand : public BuiltInCommand{
 public:
     ChangePromptCommand(const char *cmd_line, SmallShell *shell);
 
-    virtual ~ChangePromptCommand() = default;
+    virtual ~ChangePromptCommand() {}
 
     void execute() override;
 };
@@ -242,7 +246,7 @@ class ShowPidCommand : public BuiltInCommand {
 public:
     ShowPidCommand(const char *cmd_line);
 
-    virtual ~ShowPidCommand() = default;
+    virtual ~ShowPidCommand(){}
 
     void execute() override;
     
@@ -256,7 +260,7 @@ public:
 
     void execute() override;
 
-    virtual ~ChangeDirectoryCommand() = default;
+    virtual ~ChangeDirectoryCommand() {}
 };
 
 
@@ -267,7 +271,7 @@ public:
 
     void execute() override;
 
-    virtual ~JobsCommand() = default;
+    virtual ~JobsCommand() {}
 };
 
 class fgcommand : public BuiltInCommand {
@@ -280,7 +284,7 @@ public:
 
     void execute() override;
 
-    virtual ~fgcommand() = default;
+    virtual ~fgcommand() {}
 };
 
 
@@ -290,7 +294,7 @@ private:
 public:
     QuitCommand(const char *cmd_line, JobsList *jobs);
 
-    virtual ~QuitCommand() = default;
+    virtual ~QuitCommand() {}
 
     void execute() override;
 };
@@ -299,29 +303,22 @@ public:
 
 class KillCommand : public BuiltInCommand {
     // TODO: Add your data members
+    JobsList* Jobs;
 public:
     KillCommand(const char *cmd_line, JobsList *jobs);
 
-    virtual ~KillCommand() {
-    }
-
+    virtual ~KillCommand() {};
     void execute() override;
 };
 
-class ForegroundCommand : public BuiltInCommand {
-    // TODO: Add your data members
-public:
-    ForegroundCommand(const char *cmd_line, JobsList *jobs);
-
-    virtual ~ForegroundCommand() {
-    }
-
-    void execute() override;
-};
 
 class AliasCommand : public BuiltInCommand {
+    SmallShell* shell;
+    string name;
+    string command;
+    set<string> reserved_in_bash = {"watchproc", "usetenv", "alias", "unalias", ">>",">", "|", "du", "whoami", "netinfo","pwd","cd", "jobs", "fg", "quit", "kill", "chprompt","showpid","listdir"};
 public:
-    AliasCommand(const char *cmd_line);
+    AliasCommand(const char *cmd_line, SmallShell* shell);
 
     virtual ~AliasCommand() {
     }
@@ -330,8 +327,9 @@ public:
 };
 
 class UnAliasCommand : public BuiltInCommand {
+    SmallShell* shell;
 public:
-    UnAliasCommand(const char *cmd_line);
+    UnAliasCommand(const char *cmd_line, SmallShell* shell);
 
     virtual ~UnAliasCommand() {
     }
