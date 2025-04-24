@@ -86,10 +86,10 @@ public:
 
     JobEntry *getLastStoppedJob(int *jobId);
 
-    // TODO: Add extra methods or modify exisitng ones as needed
+    // TODO: Add extra methods or modify existing ones as needed
 private:
     int MaxId;
-    vector<JobEntry*> JobList;
+    vector<JobEntry*> job_entries_vec_in_jobslist;
     int number_of_jobs;
 };
 

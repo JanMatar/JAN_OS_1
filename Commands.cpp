@@ -78,7 +78,7 @@ void _removeBackgroundSign(char *cmd_line) {
 
 // TODO: Add your implementation for classes in Commands.h 
 
-SmallShell::SmallShell() : prompt("smash"), Previous_Path(nullptr) {
+SmallShell::SmallShell() : prompt("smash"), Previous_Path(nullptr), Jobs() {
 // TODO: add your implementation
 }
 
@@ -313,10 +313,10 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
 
 void ChangeDirectoryCommand::execute() {}
 
-JobsList::JobsList() : MaxId(0), number_of_jobs(0), JobList() {}
+JobsList::JobsList() : MaxId(0), number_of_jobs(0), job_entries_vec_in_jobslist{} {}
 
 JobsList::~JobsList() {
-    for (auto &it: JobList) {
+    for (auto &it: job_entries_vec_in_jobslist) {
         delete it;
     }
 }
@@ -324,14 +324,14 @@ JobsList::~JobsList() {
 void JobsList::addJob(pid_t pid, ExternalCommand *cmd, bool isStopped) {
     removeFinishedJobs();
     JobEntry *temp = new JobEntry(cmd, pid, MaxId);
-    JobList.push_back(temp);
+    job_entries_vec_in_jobslist.push_back(temp);
     MaxId++;
     number_of_jobs++;
 }
 
 void JobsList::printJobsList() {
     removeFinishedJobs();
-    for (auto &job: JobList) {
+    for (auto &job: job_entries_vec_in_jobslist) {
         cout << "[" << job->JobId << "]" << job->cmd->getCmdLine() << endl;
     }
 }
@@ -341,7 +341,7 @@ int JobsList::getNumOfJobs() const {
 }
 
 JobsList::JobEntry *JobsList::getJobById(int jobId) {
-    for (auto a: JobList) {
+    for (auto a: job_entries_vec_in_jobslist) {
         if (a->JobId == jobId) {
             return a;
         }
@@ -350,15 +350,15 @@ JobsList::JobEntry *JobsList::getJobById(int jobId) {
 }
 
 void JobsList::removeJobById(int jobId) {
-    for (auto a = JobList.begin(); a < JobList.end();) {
+    for (auto a = job_entries_vec_in_jobslist.begin(); a < job_entries_vec_in_jobslist.end();) {
         if ((*a)->JobId == jobId) {
             delete (*a);
-            a = JobList.erase(a);
+            a = job_entries_vec_in_jobslist.erase(a);
             number_of_jobs -= 1;
             if (number_of_jobs == 0) {
                 MaxId = 0;
             } else {
-                MaxId = JobList[number_of_jobs - 1]->JobId;
+                MaxId = job_entries_vec_in_jobslist[number_of_jobs - 1]->JobId;
             }
         } else {
             ++a;
@@ -367,13 +367,13 @@ void JobsList::removeJobById(int jobId) {
 }
 
 void JobsList::printAllJobsForQUIT() {
-    for (auto a: JobList) {
+    for (auto a: job_entries_vec_in_jobslist) {
         cout << a->pid << ": " << a->cmd << endl;
     }
 }
 
 void JobsList::killAllJobs() {
-    for (auto It = JobList.begin(); It != JobList.end(); ++It) {
+    for (auto It = job_entries_vec_in_jobslist.begin(); It != job_entries_vec_in_jobslist.end(); ++It) {
         kill((*It)->pid, SIGKILL);
         JobEntry *job = *It;
         (*It) = nullptr;
@@ -383,10 +383,10 @@ void JobsList::killAllJobs() {
 
 void JobsList::removeFinishedJobs() {
     int num;
-    if(JobList.empty()){
+    if(!this || job_entries_vec_in_jobslist.empty()){
         return;
     }
-    for (auto a = JobList.begin(); a != JobList.end();) {
+    for (auto a = job_entries_vec_in_jobslist.begin(); a != job_entries_vec_in_jobslist.end();) {
         num = waitpid(a.operator*()->pid, NULL, WNOHANG);
         if (num == -1) {
             perror("smash error: waitpid failed");
@@ -394,12 +394,12 @@ void JobsList::removeFinishedJobs() {
         } else if (num == 0) {
             ++a;
         } else {
-            a = JobList.erase(a);
+            a = job_entries_vec_in_jobslist.erase(a);
             number_of_jobs -= 1;
             if (number_of_jobs == 0) {
                 MaxId = 0;
             } else {
-                MaxId = JobList[number_of_jobs - 1]->JobId;
+                MaxId = job_entries_vec_in_jobslist[number_of_jobs - 1]->JobId;
             }
         }
     }
@@ -450,7 +450,7 @@ QuitCommand::QuitCommand(const char *cmd_line, JobsList *jobs) : BuiltInCommand(
 
 void QuitCommand::execute() {
     Jobs->removeFinishedJobs();
-    if (arguments[1] == "kill") {
+    if (arguments.size() > 1 && arguments[1] == "kill") {
         cout << "sending SIGKILL signal to" << Jobs->getNumOfJobs() << "jobs:" << endl;
         Jobs->printAllJobsForQUIT();
         Jobs->killAllJobs();
