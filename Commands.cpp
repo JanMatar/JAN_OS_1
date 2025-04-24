@@ -206,8 +206,9 @@ void ExternalCommand::execute() { //TODO test extensively, also some code duplic
                 exit(1);
             } else {
                 string cmd_line = this->getCmdLine();
-                const char *bash_args[3] = {"-c", cmd_line.c_str(), nullptr};
-                execvp("/bin/bash", const_cast<char *const *>(bash_args));
+                //needed to also pass "bash" as the first argument when running the external commands
+                const char *bash_arguments[4] = {"bash" , "-c", strdup(cmd_line.c_str()), nullptr};
+                execvp("/bin/bash", const_cast<char *const *>(bash_arguments));
                 perror("smash error: execvp failed");
                 exit(1);
             }
