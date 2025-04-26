@@ -363,6 +363,7 @@ public:
 };
 
 class WatchProcCommand : public BuiltInCommand {
+    string pid;
 public:
     WatchProcCommand(const char *cmd_line);
 

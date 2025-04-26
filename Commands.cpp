@@ -2,6 +2,7 @@
 #include <string.h>
 #include <iostream>
 #include <vector>
+#include <fstream>
 #include <sstream>
 #include <sys/wait.h>
 #include <iomanip>
@@ -12,6 +13,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <pwd.h>
+#include <iomanip>
 
 using namespace std;
 
@@ -143,6 +145,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new AliasCommand(command_alias.c_str(), this);
     } else if (cleaned_cmd_for_built_in == "unalias" || firstWord == "unalias" || first_of_command_alias == "unalias") {
         return new UnAliasCommand(command_alias.c_str(), this);
+    } else if (cleaned_cmd_for_built_in == "watchproc" || firstWord == "watchproc" || first_of_command_alias == "watchproc"){
+        return new WatchProcCommand(command_alias.c_str());
     } else if(cleaned_cmd_for_built_in == "whoami" || firstWord == "whoami" || first_of_command_alias == "whoami"){
         return new WhoAmICommand(command_alias.c_str());
     } else if (!firstWord.empty()) { ///external command
@@ -600,6 +604,65 @@ UnAliasCommand::UnAliasCommand(const char *cmd_line, SmallShell *shell) : BuiltI
     }
 }
 
+WatchProcCommand::WatchProcCommand(const char *cmd_line) : BuiltInCommand(cmd_line), pid(arguments[1]) {
+}
+
+void WatchProcCommand::execute() {
+
+    cout << "PID: " + pid + " | ";
+
+    //getting the cpu usage
+    ifstream file("/proc/"+ this->pid +"/stat");
+    string line;
+    getline(file, line);
+
+    istringstream iss(line);
+    string temp;
+    long utime, stime, cutime, cstime;
+    long start_time;
+    int cpu;
+
+    //for skipping unwanted data
+    for (int i = 0; i < 13; i++) iss >> temp;
+    iss >> utime >> stime >> cutime >> cstime >> start_time;
+
+    int total_time = utime + stime + cutime + cstime;
+
+    //reading the total system time to calculate presentage
+    ifstream cpu_file("/proc/stat");
+    getline(cpu_file, line);
+    istringstream cpu_stream(line);
+    string processor;
+    long user, nice, system, idle, iowait, irq, softirg, steal;
+
+    cpu_stream >> cpu >> user >> nice >> system >> idle >> iowait >> irq >> softirg>> steal;
+
+    long total_system_time = cpu + nice + system + idle + iowait + irq + softirg + steal;
+    long idle_time = idle + iowait;
+
+    double cpu_usage = ((static_cast<double>(total_time) / total_system_time) * 100);
+    cout << "CPU Usage: ";
+    cout << fixed << setprecision(1) << cpu_usage;
+    cout << " % | ";
+
+
+    //getting the memory usage values
+    string line_2, mem_key;
+    long mem_value = 0;
+    ifstream mem_file("/proc/" + pid + "/status");
+    while (getline(mem_file, line_2)){
+        istringstream iss(line_2);
+        iss >> mem_key >> mem_value;
+        if (mem_key == "VmRSS:") break;
+    }
+
+    double mem_usage_in_mb = mem_value / 1024;
+    cout << "Memory Usage: ";
+    cout << fixed << setprecision(1) << mem_usage_in_mb;
+    cout << " MB" << endl;
+}
+
+
 void UnAliasCommand::execute() {}
 
 RedirectionCommand::RedirectionCommand(const char *cmd_line, SmallShell *shell) : Command(cmd_line), shell(shell) {
@@ -667,5 +730,3 @@ void WhoAmICommand::execute() {
         perror("smash error: failed to get user information");
     }
 }
-
-
