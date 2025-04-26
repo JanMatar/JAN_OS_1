@@ -20,7 +20,6 @@ using namespace std;
 #define PATH_SIZE (200)
 
 class Command {
-    // TODO: Add your data members
    string cmd_line;
 protected:
     vector<string> arguments;
@@ -37,7 +36,6 @@ public:
 
     //virtual void prepare();
     //virtual void cleanup();
-    // TODO: Add your extra methods if needed
 };
 
 class ExternalCommand;
@@ -47,7 +45,6 @@ class JobsList {
 public:
     class JobEntry {
     public:
-        // TODO: Add your data members
         pid_t pid;
         int JobId;
         ExternalCommand* cmd;
@@ -59,7 +56,6 @@ public:
 
     };
 
-    // TODO: Add your data members
     JobsList();
 
     ~JobsList();
@@ -86,7 +82,6 @@ public:
 
     JobEntry *getLastStoppedJob(int *jobId);
 
-    // TODO: Add extra methods or modify existing ones as needed
 private:
     int MaxId;
     vector<JobEntry*> job_entries_vec_in_jobslist;
@@ -97,7 +92,6 @@ private:
 
 class SmallShell {
 private:
-    // TODO: Add your data members
     string prompt;
     char* Previous_Path;
     JobsList* Jobs;
@@ -120,7 +114,7 @@ public:
 
     ~SmallShell();
 
-    map<string ,string> getaliases();
+    map<string ,string>& getaliases();
     void executeCommand(const char *cmd_line);
 
     void setPrompt (const string new_prompt){
@@ -144,7 +138,6 @@ public:
         return prompt;
     }
 
-    // TODO: add extra methods as needed
 };
 
 class BuiltInCommand : public Command {
@@ -156,8 +149,9 @@ public:
 };
 
 class ExternalCommand : public Command {
+    string original_cmd_line;
     JobsList *jobs_list;
-    bool is_background;
+    bool is_background = false;
     bool is_complex = false;
 
 public:
@@ -168,13 +162,13 @@ public:
 
     void execute() override;
 
-//    void turnComplex(){
-//        is_complex = true;
-//    }
-
     bool isCommandComplex();
 
     bool isCommandBackground() const;
+
+    string getOriginalCmdLine() const{
+        return original_cmd_line;
+    }
 };
 
 
@@ -313,7 +307,6 @@ public:
 
 
 class KillCommand : public BuiltInCommand {
-    // TODO: Add your data members
     JobsList* Jobs;
 public:
     KillCommand(const char *cmd_line, JobsList *jobs);
@@ -335,6 +328,11 @@ public:
     }
 
     void execute() override;
+
+    //for finding the end of the alias
+    int findEndOfAlias(){
+        return arguments[arguments.size() - 1].find_first_of("'");
+    }
 };
 
 class UnAliasCommand : public BuiltInCommand {
