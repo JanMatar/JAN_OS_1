@@ -11,6 +11,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <pwd.h>
 
 using namespace std;
 
@@ -142,6 +143,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new AliasCommand(command_alias.c_str(), this);
     } else if (cleaned_cmd_for_built_in == "unalias" || firstWord == "unalias" || first_of_command_alias == "unalias") {
         return new UnAliasCommand(command_alias.c_str(), this);
+    } else if(cleaned_cmd_for_built_in == "whoami" || firstWord == "whoami" || first_of_command_alias == "whoami"){
+        return new WhoAmICommand(command_alias.c_str());
     } else if (!firstWord.empty()) { ///external command
         return new ExternalCommand(command_alias.c_str(), Jobs);
     }
@@ -627,11 +630,11 @@ void RedirectionCommand::execute() { //TODO needs more testing
         int fd;
         close(1);
         if (append) {
-            fd = open(file_name.c_str(),O_RDWR | O_CREAT | O_APPEND, 0644);
+            fd = open(file_name.c_str(), O_RDWR | O_CREAT | O_APPEND, 0644);
         } else {
             fd = open(file_name.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644);
         }
-        if (fd == -1){
+        if (fd == -1) {
             perror("smash error: open failed");
         }
         command->execute();
@@ -642,3 +645,27 @@ void RedirectionCommand::execute() { //TODO needs more testing
         }
     }
 }
+
+DiskUsageCommand::DiskUsageCommand(const char *cmd_line) : Command(cmd_line) {//TODO ask around how people did this
+
+}
+
+void DiskUsageCommand::execute() {
+
+}
+
+WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
+}
+
+void WhoAmICommand::execute() {
+    struct passwd *info = getpwuid(getuid());
+    if (info){
+        cout << info->pw_name;
+        cout << " ";
+        cout << info->pw_dir << endl;
+    } else {
+        perror("smash error: failed to get user information");
+    }
+}
+
+
