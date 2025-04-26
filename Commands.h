@@ -173,9 +173,14 @@ public:
 
 
 class RedirectionCommand : public Command {
+    SmallShell *shell;
+    string left_side_command;
+    string file_name;
+    bool append;
+    Command* command;
     // TODO: Add your data members
 public:
-    explicit RedirectionCommand(const char *cmd_line);
+    explicit RedirectionCommand(const char *cmd_line, SmallShell *shell);
 
     virtual ~RedirectionCommand() {
     }

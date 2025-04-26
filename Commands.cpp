@@ -8,6 +8,9 @@
 #include <unistd.h>
 #include "Commands.h"
 #include <regex>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 using namespace std;
 
@@ -118,8 +121,9 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     }
 
     string first_of_command_alias = command_alias.substr(0, command_alias.find_first_of(" \n"));
-
-    if (cleaned_cmd_for_built_in == "pwd" || firstWord == "pwd" || first_of_command_alias == "pwd") {
+    if (cmd_s.find(">") != string::npos || cmd_s.find(">>") != string::npos) {
+        return new RedirectionCommand(cmd_line, this);
+    } else if (cleaned_cmd_for_built_in == "pwd" || firstWord == "pwd" || first_of_command_alias == "pwd") {
         return new GetCurrentDirectory(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "showpid" || firstWord == "showpid" || first_of_command_alias == "showpid") {
         return new ShowPidCommand(command_alias.c_str());
@@ -136,6 +140,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new QuitCommand(command_alias.c_str(), Jobs);
     } else if (cleaned_cmd_for_built_in == "alias" || firstWord == "alias" || first_of_command_alias == "alias") {
         return new AliasCommand(command_alias.c_str(), this);
+    } else if (cleaned_cmd_for_built_in == "unalias" || firstWord == "unalias" || first_of_command_alias == "unalias") {
+        return new UnAliasCommand(command_alias.c_str(), this);
     } else if (!firstWord.empty()) { ///external command
         return new ExternalCommand(command_alias.c_str(), Jobs);
     }
@@ -592,3 +598,47 @@ UnAliasCommand::UnAliasCommand(const char *cmd_line, SmallShell *shell) : BuiltI
 }
 
 void UnAliasCommand::execute() {}
+
+RedirectionCommand::RedirectionCommand(const char *cmd_line, SmallShell *shell) : Command(cmd_line), shell(shell) {
+    //this is to find the index of the I/O redir arrow
+    int i = 0;
+    for (auto &argument: arguments) {
+        if (arguments[i] == ">") {
+            append = false;
+            break;
+        }
+        if (arguments[i] == ">>") {
+            append = true;
+            break;
+        }
+        i++;
+    }
+    left_side_command = getCmdLine().substr(0, getCmdLine().find_first_of(">") - 1);
+    file_name = arguments[i + 1];
+    command = shell->CreateCommand(left_side_command.c_str());
+}
+
+void RedirectionCommand::execute() { //TODO needs more testing
+    pid_t pid = fork();
+    if (pid == -1) {
+        perror("smash error: fork failed");
+    }
+    if (pid == 0) {
+        int fd;
+        close(1);
+        if (append) {
+            fd = open(file_name.c_str(),O_RDWR | O_CREAT | O_APPEND, 0644);
+        } else {
+            fd = open(file_name.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644);
+        }
+        if (fd == -1){
+            perror("smash error: open failed");
+        }
+        command->execute();
+        exit(0);
+    } else {
+        if (waitpid(pid, nullptr, 0) == -1) {
+            perror("smash error: waitpid failed");
+        }
+    }
+}
