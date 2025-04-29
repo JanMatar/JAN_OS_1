@@ -14,6 +14,7 @@
 #include <fcntl.h>
 #include <pwd.h>
 #include <iomanip>
+#include <cstdlib>
 
 using namespace std;
 
@@ -141,6 +142,10 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new fgCommand(command_alias.c_str(), Jobs);
     } else if (cleaned_cmd_for_built_in == "quit" || firstWord == "quit" || first_of_command_alias == "quit") {
         return new QuitCommand(command_alias.c_str(), Jobs);
+    } else if (cleaned_cmd_for_built_in == "kill" || firstWord == "kill" || first_of_command_alias == "kill") {
+        return new QuitCommand(command_alias.c_str(), Jobs);
+    }else if (cleaned_cmd_for_built_in == "du" || firstWord == "du" || first_of_command_alias == "du") {
+        return new DiskUsageCommand(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "alias" || firstWord == "alias" || first_of_command_alias == "alias") {
         return new AliasCommand(command_alias.c_str(), this);
     } else if (cleaned_cmd_for_built_in == "unalias" || firstWord == "unalias" || first_of_command_alias == "unalias") {
@@ -224,9 +229,11 @@ void ExternalCommand::execute() { //TODO test extensively, also some code duplic
             if (isCommandBackground()) {
                 jobs_list->addJob(pid, this);
             } else { //TODO may need to add foreground pid for signal handling
+                SmallShell::getInstance().setcurrFgCmd(pid);
                 if (waitpid(pid, nullptr, 0) == -1) {
                     perror("smash error: waitpid failed");
                 }
+                SmallShell::getInstance().setcurrFgCmd(-1);
             }
         }
     } else { //complex execution
@@ -458,8 +465,9 @@ fgCommand::fgCommand(const char *cmd_line, JobsList *Jobs) : BuiltInCommand(cmd_
             JobId = Jobs->getMaxId();
         } else {
             JobId = stoi(arguments[1]);
-            if (JobId <= 0) {
+            if (JobId < 0) {
                 cerr << "smash error: fg: invalid arguments" << endl;
+                return;
             }
             JobsList::JobEntry *temp = Jobs->getJobById(JobId);
             if (temp != nullptr) {
@@ -479,7 +487,9 @@ void fgCommand::execute() { //TODO also may need fgPid for signal handling
         return;
     }
     cout << Jobs->getJobById(JobId)->cmd->getCmdLine() << " " << pid << endl;
+    SmallShell::getInstance().setcurrFgCmd(pid);
     waitpid(pid, nullptr, 0);
+    SmallShell::getInstance().setcurrFgCmd(-1);
     Jobs->removeJobById(JobId);
 }
 
@@ -500,22 +510,25 @@ KillCommand::KillCommand(const char *cmd_line, JobsList *jobs) : BuiltInCommand(
     if (arguments.size() != 3) {
         cerr << "smash error: kill: invalid arguments" << endl;
     }
-    int num = 0;
+    int jobid = 0;
+    int signal = 0;
     try {
-        num = stoi(arguments[2]);
+        signal = stoi(arguments[1].substr(1));
+        jobid = stoi(arguments[2]);
     } catch (...) {
         cerr << "smash error: kill: invalid arguments" << endl;
     }
-    JobsList::JobEntry *Job = Jobs->getJobById(num);
+
+    JobsList::JobEntry *Job = Jobs->getJobById(jobid);
     if (arguments[1][0] != '-') {
         cerr << "smash error: kill: invalid arguments" << endl;
     } else if (Job == nullptr) {
         cerr << "smash error: kill: job-id " << stoi(arguments[2]) << " does not exist" << endl;
     } else {
-        if (kill(Job->pid, num) == -1) {
+        if (kill(Job->pid, signal) == -1) {
             perror("smash error: kill failed");
         } else {
-            cout << "signal number " << num << " was sent to pid " << Job->pid << endl;
+            cout << "signal number " << signal << " was sent to pid " << Job->pid << endl;
         }
     }
 }
@@ -710,12 +723,41 @@ void RedirectionCommand::execute() { //TODO needs more testing
 }
 
 DiskUsageCommand::DiskUsageCommand(const char *cmd_line) : Command(cmd_line) {//TODO ask around how people did this
-
 }
 
 void DiskUsageCommand::execute() {
+    // Check if more than one argument is provided
+    if (arguments.size() > 2) {
+        cerr << "smash error: du: too many arguments" << endl;
+        return;
+    }
 
+    // Determine the path (use current directory if not provided)
+    string path = (arguments.size() == 1) ? "." : arguments[1];
+
+    struct stat stat_buf;
+    // Check if the directory exists
+    if (stat(path.c_str(), &stat_buf) == -1) {
+        if (errno == ENOENT) {
+            // Directory does not exist
+            cerr << "smash error: du: directory " << path << " does not exist" << endl;
+        } else {
+            perror("smash error: stat failed");
+        }
+        return;
+    }
+
+    // Check if it's a directory
+    if (!S_ISDIR(stat_buf.st_mode)) {
+        return;  // We don't need to print any error, just return silently
+    }
+
+    // If it's a directory, calculate disk usage
+    long long total_size = calculateDirectorySize(path);
+    cout << "Total disk usage: " << total_size / 1024 << " KB" << endl;
 }
+
+
 
 WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
 }
@@ -729,4 +771,272 @@ void WhoAmICommand::execute() {
     } else {
         perror("smash error: failed to get user information");
     }
+}
+
+//static string fetchIpAddress(const string &networkInterface) {
+//    struct ifaddrs *interfaceList = nullptr;
+//    void *addressPointer = nullptr;
+//
+//    if (getifaddrs(&interfaceList) == -1) {
+//        cerr << "smash error: netinfo: unable to get IP address for interface " << networkInterface << endl;
+//        return "";
+//    }
+//
+//    // Loop through the network interfaces
+//    for (struct ifaddrs *currentInterface = interfaceList; currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
+//        if (currentInterface->ifa_addr->sa_family == AF_INET) {
+//            if (networkInterface == currentInterface->ifa_name) {
+//                addressPointer = &((struct sockaddr_in *)currentInterface->ifa_addr)->sin_addr;
+//                char ipBuffer[INET_ADDRSTRLEN];
+//                inet_ntop(AF_INET, addressPointer, ipBuffer, INET_ADDRSTRLEN);
+//                freeifaddrs(interfaceList);
+//                return string(ipBuffer);
+//            }
+//        }
+//    }
+//    freeifaddrs(interfaceList);
+//    cerr << "smash error: netinfo: interface " << networkInterface << " does not have an IP address" << endl;
+//    return "";
+//}
+//
+//static string fetchSubnetMask(const string &networkInterface) {
+//    struct ifaddrs *interfaceList = nullptr;
+//    void *addressPointer = nullptr;
+//
+//    if (getifaddrs(&interfaceList) == -1) {
+//        cerr << "smash error: netinfo: unable to get subnet mask for interface " << networkInterface << endl;
+//        return "";
+//    }
+//
+//    // Loop through the network interfaces
+//    for (struct ifaddrs *currentInterface = interfaceList; currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
+//        if (currentInterface->ifa_addr->sa_family == AF_INET) {
+//            if (networkInterface == currentInterface->ifa_name) {
+//                addressPointer = &((struct sockaddr_in *)currentInterface->ifa_netmask)->sin_addr;
+//                char subnetBuffer[INET_ADDRSTRLEN];
+//                inet_ntop(AF_INET, addressPointer, subnetBuffer, INET_ADDRSTRLEN);
+//                freeifaddrs(interfaceList);
+//                return string(subnetBuffer);
+//            }
+//        }
+//    }
+//    freeifaddrs(interfaceList);
+//    cerr << "smash error: netinfo: interface " << networkInterface << " does not have a subnet mask" << endl;
+//    return "";
+//}
+//
+//static string parseGatewayInfo(const string &networkInterface, char *lineContent) {
+//    char *lineFields[16];
+//    while (lineContent != NULL) {
+//        int fieldCount = _parseCommandLine(lineContent, lineFields);
+//
+//        if (fieldCount < 3 || strcmp(lineFields[0], "Iface") == 0) {
+//            lineContent = strtok(NULL, "\n");
+//            continue;
+//        }
+//        if (networkInterface == lineFields[0]) {
+//            if (strcmp(lineFields[1], "00000000") == 0) {
+//                unsigned long gatewayAddress = strtoul(lineFields[2], nullptr, 16);
+//                struct in_addr gatewayAddr;
+//                gatewayAddr.s_addr = gatewayAddress;
+//                return inet_ntoa(gatewayAddr);
+//            }
+//        }
+//        lineContent = strtok(NULL, "\n");
+//    }
+//    return "";
+//}
+//
+//static string fetchDefaultGateway(const string &networkInterface) {
+//    int fileDesc = open("/proc/net/route", O_RDONLY);
+//    if (fileDesc == -1) {
+//        perror("smash error: netinfo");
+//        return "";
+//    }
+//    char buffer[PATH_MAX];
+//    ssize_t bytesRead = read(fileDesc, buffer, sizeof(buffer) - 1);
+//    if (bytesRead == -1) {
+//        perror("smash error: netinfo");
+//        close(fileDesc);
+//        return "";
+//    }
+//    buffer[bytesRead] = '\0';
+//    close(fileDesc);
+//
+//    char *lineContent = strtok(buffer, "\n");
+//
+//    return parseGatewayInfo(networkInterface, lineContent);
+//}
+//
+//static vector<string> extractDnsServers(char *bufferContent) {
+//    char *lineContent = strtok(bufferContent, "\n");
+//    char *lineFields[16];
+//    vector<string> dnsServers;
+//    while (lineContent != NULL) {
+//        int fieldCount = _parseCommandLine(lineContent, lineFields);
+//        if (fieldCount < 2) {
+//            lineContent = strtok(NULL, "\n");
+//            continue;
+//        }
+//        if (strcmp(lineFields[0], "nameserver") == 0) {
+//            dnsServers.push_back(string(lineFields[1]));
+//        }
+//        lineContent = strtok(NULL, "\n");
+//    }
+//    return dnsServers;
+//}
+//
+//static vector<string> fetchDnsServers() {
+//    int fileDesc = open("/etc/resolv.conf", O_RDONLY);
+//    vector<string> dnsServers;
+//    if (fileDesc == -1) {
+//        cerr << "smash error: netinfo: unable to open /etc/resolv.conf" << endl;
+//        return dnsServers;
+//    }
+//    char buffer[PATH_MAX];
+//    ssize_t bytesRead = read(fileDesc, buffer, sizeof(buffer) - 1);
+//    if (bytesRead == -1) {
+//        perror("smash error: netinfo");
+//        if(close(fileDesc) == -1){
+//            perror("smash error: close failed");
+//        }
+//        return dnsServers;
+//    }
+//    buffer[bytesRead] = '\0';
+//    close(fileDesc);
+//    dnsServers = extractDnsServers(buffer);
+//    return dnsServers;
+//}
+//
+//
+//NetInfo::NetInfo(const char *cmd_line) { interfaceFound = false;  // No need for toIgnore flag anymore
+//
+//    if (_isBackgroundComamnd(cmd_line)) {
+//        _removeBackgroundSign(cmd_line);  // Clean background symbol if present
+//    }
+//
+//    char *argumentsArray[COMMAND_MAX_ARGS];
+//    _parseCommandLine(cmd_line, argumentsArray);
+//
+//    if (argumentsArray[1] == nullptr) {
+//        cerr << "smash error: netinfo: no interface specified" << endl;
+//        interfaceFound = false;
+//        return;
+//    }
+//
+//    string networkInterface = argumentsArray[1];
+//
+//    // Retrieve IP address for the interface
+//    ipAddress = fetchIpAddress(networkInterface);
+//    if (ipAddress.empty()) {
+//        interfaceFound = false;
+//        return;
+//    }
+//
+//    // Retrieve Subnet Mask
+//    subnetMask = fetchSubnetMask(networkInterface);
+//    if (subnetMask.empty()) {
+//        interfaceFound = false;
+//        return;
+//    }
+//
+//    // Retrieve Default Gateway
+//    defaultGateway = fetchDefaultGateway(networkInterface);
+//    if (defaultGateway.empty()) {
+//        interfaceFound = false;
+//        return;
+//    }
+//
+//    // Retrieve DNS Servers
+//    dnsServers = fetchDnsServers();
+//    if (dnsServers.empty()) {
+//        interfaceFound = false;
+//        return;
+//    }
+//
+//    interfaceFound = true;  // Set flag to true if everything is retrieved successfully
+//}
+//
+//void NetInfo::execute() {
+//    if (interfaceFound) {
+//        // Display the retrieved network information
+//        cout << "IP Address: " << ipAddress << endl;
+//        cout << "Subnet Mask: " << subnetMask << endl;
+//        cout << "Default Gateway: " << defaultGateway << endl;
+//        cout << "DNS Servers: ";
+//        for (size_t i = 0; i < dnsServers.size(); ++i) {
+//            cout << dnsServers[i];
+//            if (i != dnsServers.size() - 1) {
+//                cout << ", ";
+//            }
+//        }
+//        cout << endl;
+//    }
+//}
+
+PipeCommand::PipeCommand(const char *cmd_line) : Command(cmd_line) {}
+
+void PipeCommand::execute() {
+    string command = _trim(getCmdLine());
+    int cutoff;
+    int type;
+    cutoff = command.find("|&");
+    if(cutoff != -1){
+        type = 2;
+    } else {
+        cutoff = command.find("|");
+        if(cutoff != -1){
+            type = 1;
+        } else {
+            std::cerr << "smash error: invalid pipe command" << std::endl;
+            return;
+        }
+    }
+
+    string Command2 = "";
+    string Command1 = command.substr(0, cutoff);
+    if(type == 1){
+        Command2 = command.substr(cutoff + 1);
+    } else {
+        Command2 = command.substr(cutoff + 2);
+    }
+
+    int fd[2];
+    if(pipe(fd) == -1){
+        perror("smash error: pipe failed");
+        return;
+    }
+
+    pid_t pid1 = fork();
+    pid_t pid2 = fork();
+    if(pid2 < 0 || pid1 < 0){
+        perror("smash error: fork failed");
+    }
+
+    if(pid1 == 0){
+        setpgrp();
+        close(fd[0]);
+        if(type == 1){
+            dup2(fd[1], STDOUT_FILENO);
+        } else {
+            dup2(fd[1], STDERR_FILENO);
+        }
+        close(fd[1]);
+        SmallShell::getInstance().executeCommand(Command1.c_str());
+        exit(0);
+    }
+
+    if(pid2 == 0){
+        setpgrp();
+        close(fd[1]);
+        dup2(fd[0], STDIN_FILENO);
+        close(fd[0]);
+        SmallShell::getInstance().executeCommand(Command2.c_str());
+        exit(0);
+    }
+
+    close(fd[0]);
+    close(fd[1]);
+    waitpid(pid1, nullptr, 0);
+    waitpid(pid2, nullptr, 0);
 }

@@ -12,6 +12,9 @@
 #include <memory>
 #include <set>
 #include<pwd.h>
+#include <cerrno>
+#include <sys/stat.h>
+#include <dirent.h>
 
 
 using namespace std;
@@ -97,7 +100,7 @@ private:
     char* Previous_Path;
     JobsList* Jobs;
     map<string, string> Aliases;
-
+    pid_t currFgCmd = -1;
 
     SmallShell();
 
@@ -111,6 +114,14 @@ public:
         static SmallShell instance; // Guaranteed to be destroyed.
         // Instantiated on first use.
         return instance;
+    }
+
+    pid_t getcurrFgCmd() const {
+        return currFgCmd;
+    }
+
+    void setcurrFgCmd(pid_t newpid) {
+        currFgCmd = newpid;
     }
 
     ~SmallShell();
@@ -201,6 +212,41 @@ public:
 };
 
 class DiskUsageCommand : public Command {
+    long long calculateDirectorySize(const string &dir_path) {
+        long long total_size = 0;
+        DIR *dir = opendir(dir_path.c_str());
+        if (dir == nullptr) {
+            perror("smash error: opendir failed");
+            return 0;
+        }
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            // Skip "." and ".." directories
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+
+            string full_path = dir_path + "/" + entry->d_name;
+            struct stat stat_buf;
+
+            if (stat(full_path.c_str(), &stat_buf) == -1) {
+                perror("smash error: stat failed");
+                continue;
+            }
+
+            // Add the size of the file or directory to the total size
+            total_size += stat_buf.st_size;
+
+            // If it's a directory, recursively calculate its size
+            if (S_ISDIR(stat_buf.st_mode)) {
+                total_size += calculateDirectorySize(full_path);
+            }
+        }
+
+        closedir(dir);
+        return total_size;
+    }
 public:
     DiskUsageCommand(const char *cmd_line);
 
@@ -221,7 +267,11 @@ public:
 };
 
 class NetInfo : public Command {
-    // TODO: Add your data members **BONUS: 10 Points**
+    bool interfaceFound;  // A flag to check if the network information was successfully retrieved
+    string ipAddress;     // To store the IP address of the interface
+    string subnetMask;    // To store the subnet mask of the interface
+    string defaultGateway; // To store the default gateway
+    vector<string> dnsServers; // To store the list of DNS servers
 public:
     NetInfo(const char *cmd_line);
 
