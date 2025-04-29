@@ -669,7 +669,7 @@ long WatchProcCommand::get_process_time() {
         stime = atol(token);
     }
     long total_process_time = utime + stime;
-    free(buffer);
+    delete[] buffer;
     close(fd);
     return total_process_time;
 }
@@ -687,7 +687,7 @@ long WatchProcCommand::get_system_time() {
 
     if (read_bytes == -1) {
         close(fd);
-        free(buffer);
+        delete[] buffer;
         perror("smash error: read failed");
     }
 
@@ -705,13 +705,13 @@ long WatchProcCommand::get_system_time() {
             token = strtok(nullptr, " ");
         }
     }
-    free(buffer);
+    delete[] buffer;
     close(fd);
     return total_system_time;
 }
 
 long WatchProcCommand::get_memory_usage() {
-    string path = "/proc/" + this->pid + "/stat";
+    string path = "/proc/" + this->pid + "/status";
 
     int fd = open(path.c_str(), O_RDONLY);
     if (fd == -1) {
@@ -723,7 +723,7 @@ long WatchProcCommand::get_memory_usage() {
 
     if (read_bytes == -1) {
         close(fd);
-        free(buffer);
+        delete[] buffer;
         perror("smash error: read failed");
     }
 
@@ -748,7 +748,7 @@ long WatchProcCommand::get_memory_usage() {
             line = strtok(nullptr, "\n");
         }
     }
-    free(buffer);
+    delete[] buffer;
     close(fd);
     return memory_usage;
 }
