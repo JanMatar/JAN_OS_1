@@ -145,14 +145,17 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     } else if (cleaned_cmd_for_built_in == "quit" || firstWord == "quit" || first_of_command_alias == "quit") {
         return new QuitCommand(command_alias.c_str(), Jobs);
     } else if (cleaned_cmd_for_built_in == "kill" || firstWord == "kill" || first_of_command_alias == "kill") {
-        return new QuitCommand(command_alias.c_str(), Jobs);
+        return new KillCommand(command_alias.c_str(), Jobs);
     } else if (cleaned_cmd_for_built_in == "du" || firstWord == "du" || first_of_command_alias == "du") {
         return new DiskUsageCommand(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "alias" || firstWord == "alias" || first_of_command_alias == "alias") {
         return new AliasCommand(command_alias.c_str(), this);
     } else if (cleaned_cmd_for_built_in == "unalias" || firstWord == "unalias" || first_of_command_alias == "unalias") {
         return new UnAliasCommand(command_alias.c_str(), this);
-    } else if (cleaned_cmd_for_built_in == "watchproc" || firstWord == "watchproc" ||
+    }else if (cleaned_cmd_for_built_in == "unsetenv" || firstWord == "unsetenv" ||
+              first_of_command_alias == "unsetenv") {
+        return new UnSetEnvCommand(command_alias.c_str());
+    }else if (cleaned_cmd_for_built_in == "watchproc" || firstWord == "watchproc" ||
                first_of_command_alias == "watchproc") {
         return new WatchProcCommand(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "whoami" || firstWord == "whoami" || first_of_command_alias == "whoami") {
@@ -625,13 +628,116 @@ UnSetEnvCommand::UnSetEnvCommand(const char *cmd_line) : BuiltInCommand(cmd_line
 }
 
 void UnSetEnvCommand::execute() {
-    string pid = to_string(getpid());
-    string path = "/proc/" + pid + "/environ";
+//    if (arguments.size() == 1){
+//        perror("smash error: unsetenv: not enough arguments");
+//        return;
+//    }
+//    string path = "/proc/self/environ";
+//    int fd = open(path.c_str(), O_RDONLY);
+//    if (fd == -1) {
+//        perror("smash error: open failed");
+//        return;
+//    }
+//
+//    char buffer[2 * BUFFER_SIZE];
+//    ssize_t read_bytes = read(fd, buffer, 2 * BUFFER_SIZE - 1);
+//    close(fd);
+//    if (read_bytes < 0) {
+//        perror("smash error: read failed");
+//        return;
+//    }
+//    buffer[2 * BUFFER_SIZE - 1] = '\0';
+//
+//    char* ptr = buffer;
+//    int environ_index = 0;
+//
+//    while (*ptr != '\0') {
+//        size_t size = strlen(ptr);
+//        bool removing = false;
+//
+//        for (auto &arg : arguments) {
+//            if (arg == "unsetenv") continue;
+//            string name = string(ptr).substr(0, string(ptr).find_first_of("="));
+//            if (name == arg) {
+//                removing = true;
+//                break;
+//            }
+//        }
+//
+//        if (removing) {
+//            int j = environ_index;
+//            while (environ[j]) {
+//                environ[j] = environ[j + 1];
+//                j++;
+//            }
+//        } else {
+//            ptr += size + 1;
+//            environ_index++;
+//        }
+//
+//    }
+
+    if (arguments.size() == 1){
+        perror("smash error: unsetenv: not enough arguments");
+        return;
+    }
+    string path = "/proc/self/environ"; //may need to use the pid instead of self
     int fd = open(path.c_str(), O_RDONLY);
     if (fd == -1) {
         perror("smash error: open failed");
+        return;
+    }
+
+    char buffer[2 * BUFFER_SIZE];
+    ssize_t read_bytes = read(fd, buffer, 2 * BUFFER_SIZE - 1);
+    close(fd);
+    if (read_bytes < 0) {
+        perror("smash error: read failed");
+        return;
+    }
+    buffer[2 * BUFFER_SIZE - 1] = '\0';
+
+    for (size_t a = 1; a < arguments.size(); a++) { // start from 1 to skip "unsetenv"
+        const string& key = arguments[a];
+        bool found = false;
+
+        //here we go over all environments for each argument to be able to handle the error of the argument not existing
+        char* ptr = buffer;
+        while (ptr < buffer + read_bytes) {//while not in the end of the buffer
+            string entry(ptr);
+            size_t pos = entry.find('=');
+            if (pos != string::npos) {
+                string name = entry.substr(0, pos);
+                if (name == key) {
+                    found = true;
+                    break;
+                }
+            }
+            ptr += strlen(ptr) + 1;
+        }
+
+        if (!found) {
+            cerr << "smash error: unsetenv: " << key << " does not exist" << endl;
+            return;
+        }
+
+        for (int i = 0; environ[i]; ++i) {
+            string entry(environ[i]);
+            size_t pos = entry.find('=');
+            if (pos != string::npos) {
+                string name = entry.substr(0, pos);
+                if (name == key) {
+                    for (int j = i; environ[j]; ++j) {
+                        environ[j] = environ[j + 1];
+                    }
+                    --i; // stay at the same index after shifting
+                    break;
+                }
+            }
+        }
     }
 }
+
 
 WatchProcCommand::WatchProcCommand(const char *cmd_line) : BuiltInCommand(cmd_line), pid(arguments[1]) {
 }
@@ -738,9 +844,9 @@ long WatchProcCommand::get_memory_usage() {
         line = strtok(nullptr, "\n");
     }
 
-    if (memory_usage == 0){
+    if (memory_usage == 0) {
         line = strtok(buffer, "\n");
-        while (line){
+        while (line) {
             if (strncmp(line, "VmSize:", 7) == 0) {
                 memory_usage = atol(line + 8);
                 break;
@@ -755,9 +861,17 @@ long WatchProcCommand::get_memory_usage() {
 
 void WatchProcCommand::execute() {
 
+    string path_1 = "/proc/" + this->pid + "/stat";
+    string path_2 = "/proc/" + this->pid + "/status";
+
+    if ((access(path_1.c_str(), F_OK) == -1) || (access(path_2.c_str(), F_OK == -1))){
+        cerr << "smash error: watchproc: pid " << this->pid << " does not exist" << endl;
+        return;
+    }
+
     cout << "PID: " + pid + " | ";
 
-    double cpu_usage = (get_process_time()/get_system_time()) * 100;
+    double cpu_usage = (get_process_time() / get_system_time()) * 100;
 
     cout << "CPU Usage: ";
     cout << fixed << setprecision(1) << cpu_usage;
@@ -1115,11 +1229,11 @@ void PipeCommand::execute() {
     int cutoff;
     int type;
     cutoff = command.find("|&");
-    if(cutoff != -1){
+    if (cutoff != -1) {
         type = 2;
     } else {
         cutoff = command.find("|");
-        if(cutoff != -1){
+        if (cutoff != -1) {
             type = 1;
         } else {
             std::cerr << "smash error: invalid pipe command" << std::endl;
@@ -1129,28 +1243,28 @@ void PipeCommand::execute() {
 
     string Command2 = "";
     string Command1 = command.substr(0, cutoff);
-    if(type == 1){
+    if (type == 1) {
         Command2 = command.substr(cutoff + 1);
     } else {
         Command2 = command.substr(cutoff + 2);
     }
 
     int fd[2];
-    if(pipe(fd) == -1){
+    if (pipe(fd) == -1) {
         perror("smash error: pipe failed");
         return;
     }
 
     pid_t pid1 = fork();
     pid_t pid2 = fork();
-    if(pid2 < 0 || pid1 < 0){
+    if (pid2 < 0 || pid1 < 0) {
         perror("smash error: fork failed");
     }
 
-    if(pid1 == 0){
+    if (pid1 == 0) {
         setpgrp();
         close(fd[0]);
-        if(type == 1){
+        if (type == 1) {
             dup2(fd[1], STDOUT_FILENO);
         } else {
             dup2(fd[1], STDERR_FILENO);
@@ -1160,7 +1274,7 @@ void PipeCommand::execute() {
         exit(0);
     }
 
-    if(pid2 == 0){
+    if (pid2 == 0) {
         setpgrp();
         close(fd[1]);
         dup2(fd[0], STDIN_FILENO);
