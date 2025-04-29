@@ -287,7 +287,6 @@ BuiltInCommand::BuiltInCommand(const char *cmd_line) : Command(cmd_line) {
 
 ChangePromptCommand::ChangePromptCommand(const char *cmd_line, SmallShell *shell)
         : BuiltInCommand(cmd_line), shell(shell) {
-    SmallShell::getInstance().setcurrFgCmd()
     prompt = string("smash");
     if (arguments.size() >= 2) {
         prompt = arguments[1];
@@ -743,15 +742,75 @@ WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
 }
 
 void WhoAmICommand::execute() {
-    struct passwd *info = getpwuid(getuid());
-    if (info){
-        cout << info->pw_name;
-        cout << " ";
-        cout << info->pw_dir << endl;
-    } else {
-        perror("smash error: failed to get user information");
+    uid_t uid = getuid();
+
+// Open /etc/passwd
+    int fd = open("/etc/passwd", O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
     }
+
+    char buffer[1024];
+    ssize_t bytesRead;
+    bool found = false;
+    size_t bufferPos = 0;
+
+    while (!found && (bytesRead = read(fd, buffer + bufferPos, sizeof(buffer) - bufferPos - 1)) > 0) {
+// Ensure null-termination for string operations
+        buffer[bufferPos + bytesRead] = '\0';
+        char *line = buffer;
+
+// Process each complete line in buffer
+        char *lineEnd;
+        while ((lineEnd = strchr(line, '\n')) != nullptr) {
+            *lineEnd = '\0'; // Null-terminate the line
+
+// Parse passwd line (username:password:uid:gid:gecos:home:shell)
+            char *saveptr;
+            char *username = strtok_r(line, ":", &saveptr);
+            strtok_r(nullptr, ":", &saveptr); // skip password
+            char *uidStr = strtok_r(nullptr, ":", &saveptr);
+
+// Skip next 3 fields (gid, gecos, shell)
+            for (int i = 0; i < 3; i++) strtok_r(nullptr, ":", &saveptr);
+
+            char *homeDir = strtok_r(nullptr, ":", &saveptr);
+
+            if (username && uidStr && homeDir && atoi(uidStr) == uid) {
+                std::cout << username << " " << homeDir << std::endl;
+                found = true;
+                break;
+            }
+
+            line = lineEnd + 1; // Move to next line
+        }
+
+// Handle remaining partial line (if any)
+        if (!found) {
+            bufferPos = strlen(line);
+            if (bufferPos > 0) {
+                memmove(buffer, line, bufferPos);
+            }
+        }
+    }
+
+// Handle read errors
+    if (bytesRead == -1) {
+        perror("smash error: read failed");
+    }
+
+// Handle user not found
+    if (!found) {
+        std::cerr << "smash error: user not found" << std::endl;
+    }
+
+    close(fd);
 }
+
+
+
+
 
 //static string fetchIpAddress(const string &networkInterface) {
 //    struct ifaddrs *interfaceList = nullptr;
