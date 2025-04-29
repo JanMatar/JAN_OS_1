@@ -15,6 +15,24 @@
 #include <cerrno>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <iostream>
+#include <fcntl.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <iostream>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <cstring>
+#include <cerrno>
+#include <sys/types.h>
+#include <sys/syscall.h>  // Ensure this is included
+#include <sys/types.h>     // Required for directory entry structs
+
+
 
 
 using namespace std;
@@ -212,41 +230,66 @@ public:
 };
 
 class DiskUsageCommand : public Command {
+    long long calculatePathSize(const string &path) {
+        struct stat stat_buf;
+        if (lstat(path.c_str(), &stat_buf) == -1) {
+            perror("smash error: stat failed");
+            return 0;
+        }
+
+        if (S_ISREG(stat_buf.st_mode)) {
+            return stat_buf.st_size;
+        }
+        else if (S_ISDIR(stat_buf.st_mode)) {
+            return calculateDirectorySize(path);
+        }
+
+        return 0;  // Skip special files
+    }
+
     long long calculateDirectorySize(const string &dir_path) {
         long long total_size = 0;
         DIR *dir = opendir(dir_path.c_str());
-        if (dir == nullptr) {
+        if (!dir) {
             perror("smash error: opendir failed");
             return 0;
         }
 
         struct dirent *entry;
         while ((entry = readdir(dir)) != nullptr) {
-            // Skip "." and ".." directories
+            // Skip "." and ".." entries
             if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
                 continue;
             }
 
-            string full_path = dir_path + "/" + entry->d_name;
-            struct stat stat_buf;
+            // Build full path
+            string full_path = dir_path;
+            if (full_path.back() != '/') {
+                full_path += "/";
+            }
+            full_path += entry->d_name;
 
-            if (stat(full_path.c_str(), &stat_buf) == -1) {
-                perror("smash error: stat failed");
+            // Get file info
+            struct stat entry_stat;
+            if (lstat(full_path.c_str(), &entry_stat) == -1) {
+                perror("smash error: lstat failed");
                 continue;
             }
 
-            // Add the size of the file or directory to the total size
-            total_size += stat_buf.st_size;
-
-            // If it's a directory, recursively calculate its size
-            if (S_ISDIR(stat_buf.st_mode)) {
+            if (S_ISDIR(entry_stat.st_mode)) {
+                // Recursively calculate directory size
                 total_size += calculateDirectorySize(full_path);
             }
+            else if (S_ISREG(entry_stat.st_mode)) {
+                total_size += entry_stat.st_size;
+            }
+            // Skip other file types
         }
 
         closedir(dir);
         return total_size;
     }
+
 public:
     DiskUsageCommand(const char *cmd_line);
 

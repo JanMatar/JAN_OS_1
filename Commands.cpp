@@ -15,6 +15,8 @@
 #include <pwd.h>
 #include <iomanip>
 #include <cstdlib>
+#include <sys/syscall.h>
+
 
 using namespace std;
 
@@ -829,68 +831,78 @@ void DiskUsageCommand::execute() {
 
     // Determine the path (use current directory if not provided)
     string path = (arguments.size() == 1) ? "." : arguments[1];
-
-    struct stat stat_buf;
-    // Check if the directory exists
-    if (stat(path.c_str(), &stat_buf) == -1) {
-        if (errno == ENOENT) {
-            // Directory does not exist
-            cerr << "smash error: du: directory " << path << " does not exist" << endl;
-        } else {
-            perror("smash error: stat failed");
-        }
-        return;
-    }
-
-    // Check if it's a directory
-    if (!S_ISDIR(stat_buf.st_mode)) {
-        return;  // We don't need to print any error, just return silently
-    }
-
-    // If it's a directory, calculate disk usage
-    long long total_size = calculateDirectorySize(path);
+    long long total_size = calculatePathSize(path);
     cout << "Total disk usage: " << total_size / 1024 << " KB" << endl;
 }
-
 
 WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
 }
 
 void WhoAmICommand::execute() {
-    int fd = open("/etc/passwd", O_RDONLY);
-    if (fd == -1){
-        perror("smash error: open failed");
-    }
-    char buffer[2 * BUFFER_SIZE];
-    ssize_t read_bytes = read(fd, buffer, 2 * BUFFER_SIZE - 1);
-    close(fd);
+    uid_t uid = getuid();
 
-    if (read_bytes <= 0 ){
+// Open /etc/passwd
+    int fd = open("/etc/passwd", O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+        return;
+    }
+
+    char buffer[1024];
+    ssize_t bytesRead;
+    bool found = false;
+    size_t bufferPos = 0;
+
+    while (!found && (bytesRead = read(fd, buffer + bufferPos, sizeof(buffer) - bufferPos - 1)) > 0) {
+// Ensure null-termination for string operations
+        buffer[bufferPos + bytesRead] = '\0';
+        char *line = buffer;
+
+// Process each complete line in buffer
+        char *lineEnd;
+        while ((lineEnd = strchr(line, '\n')) != nullptr) {
+            *lineEnd = '\0'; // Null-terminate the line
+
+// Parse passwd line (username:password:uid:gid:gecos:home:shell)
+            char *saveptr;
+            char *username = strtok_r(line, ":", &saveptr);
+            strtok_r(nullptr, ":", &saveptr); // skip password
+            char *uidStr = strtok_r(nullptr, ":", &saveptr);
+
+// Skip next 3 fields (gid, gecos, shell)
+            for (int i = 0; i < 3; i++) strtok_r(nullptr, ":", &saveptr);
+
+            char *homeDir = strtok_r(nullptr, ":", &saveptr);
+
+            if (username && uidStr && homeDir && atoi(uidStr) == uid) {
+                std::cout << username << " " << homeDir << std::endl;
+                found = true;
+                break;
+            }
+
+            line = lineEnd + 1; // Move to next line
+        }
+
+// Handle remaining partial line (if any)
+        if (!found) {
+            bufferPos = strlen(line);
+            if (bufferPos > 0) {
+                memmove(buffer, line, bufferPos);
+            }
+        }
+    }
+
+// Handle read errors
+    if (bytesRead == -1) {
         perror("smash error: read failed");
     }
 
-    buffer[2 * BUFFER_SIZE - 1] = '\0';
-    char* line = strtok(buffer, "\n");
-    while (line){
-        char* copy = strdup(line);
-
-        char* fields[7] = {nullptr};
-        int i = 0;
-        char* token = strtok(copy, ":");
-        while (token && i < 7){
-            fields[i++] = token;
-            token = strtok(nullptr, ":");
-        }
-        if (fields[2] && atoi(fields[2]) == getuid()){
-            cout << fields[0] << " " << fields[5] << endl;
-            free(copy);
-            return;
-        }
-        free(copy);
-        line = strtok(nullptr, "\n");
+// Handle user not found
+    if (!found) {
+        std::cerr << "smash error: user not found" << std::endl;
     }
 
-
+    close(fd);
 }
 
 //static string fetchIpAddress(const string &networkInterface) {
@@ -1101,11 +1113,11 @@ void PipeCommand::execute() {
     int cutoff;
     int type;
     cutoff = command.find("|&");
-    if (cutoff != -1) {
+    if(cutoff != -1){
         type = 2;
     } else {
         cutoff = command.find("|");
-        if (cutoff != -1) {
+        if(cutoff != -1){
             type = 1;
         } else {
             std::cerr << "smash error: invalid pipe command" << std::endl;
@@ -1115,28 +1127,28 @@ void PipeCommand::execute() {
 
     string Command2 = "";
     string Command1 = command.substr(0, cutoff);
-    if (type == 1) {
+    if(type == 1){
         Command2 = command.substr(cutoff + 1);
     } else {
         Command2 = command.substr(cutoff + 2);
     }
 
     int fd[2];
-    if (pipe(fd) == -1) {
+    if(pipe(fd) == -1){
         perror("smash error: pipe failed");
         return;
     }
 
     pid_t pid1 = fork();
     pid_t pid2 = fork();
-    if (pid2 < 0 || pid1 < 0) {
+    if(pid2 < 0 || pid1 < 0){
         perror("smash error: fork failed");
     }
 
-    if (pid1 == 0) {
+    if(pid1 == 0){
         setpgrp();
         close(fd[0]);
-        if (type == 1) {
+        if(type == 1){
             dup2(fd[1], STDOUT_FILENO);
         } else {
             dup2(fd[1], STDERR_FILENO);
@@ -1146,7 +1158,7 @@ void PipeCommand::execute() {
         exit(0);
     }
 
-    if (pid2 == 0) {
+    if(pid2 == 0){
         setpgrp();
         close(fd[1]);
         dup2(fd[0], STDIN_FILENO);
