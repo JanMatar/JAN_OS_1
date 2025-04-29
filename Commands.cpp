@@ -15,6 +15,8 @@
 #include <pwd.h>
 #include <iomanip>
 #include <cstdlib>
+#include <sys/syscall.h>
+
 
 using namespace std;
 
@@ -285,6 +287,7 @@ BuiltInCommand::BuiltInCommand(const char *cmd_line) : Command(cmd_line) {
 
 ChangePromptCommand::ChangePromptCommand(const char *cmd_line, SmallShell *shell)
         : BuiltInCommand(cmd_line), shell(shell) {
+    SmallShell::getInstance().setcurrFgCmd()
     prompt = string("smash");
     if (arguments.size() >= 2) {
         prompt = arguments[1];
@@ -726,38 +729,15 @@ DiskUsageCommand::DiskUsageCommand(const char *cmd_line) : Command(cmd_line) {//
 }
 
 void DiskUsageCommand::execute() {
-    // Check if more than one argument is provided
     if (arguments.size() > 2) {
         cerr << "smash error: du: too many arguments" << endl;
         return;
     }
 
-    // Determine the path (use current directory if not provided)
     string path = (arguments.size() == 1) ? "." : arguments[1];
-
-    struct stat stat_buf;
-    // Check if the directory exists
-    if (stat(path.c_str(), &stat_buf) == -1) {
-        if (errno == ENOENT) {
-            // Directory does not exist
-            cerr << "smash error: du: directory " << path << " does not exist" << endl;
-        } else {
-            perror("smash error: stat failed");
-        }
-        return;
-    }
-
-    // Check if it's a directory
-    if (!S_ISDIR(stat_buf.st_mode)) {
-        return;  // We don't need to print any error, just return silently
-    }
-
-    // If it's a directory, calculate disk usage
-    long long total_size = calculateDirectorySize(path);
+    long long total_size = calculatePathSize(path);
     cout << "Total disk usage: " << total_size / 1024 << " KB" << endl;
 }
-
-
 
 WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
 }
