@@ -21,7 +21,7 @@ using namespace std;
 
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
-#define PATH_SIZE (200)
+#define BUFFER_SIZE (4096)
 
 class Command {
    string cmd_line;
@@ -419,6 +419,12 @@ public:
 
     virtual ~WatchProcCommand() {
     }
+
+    long get_process_time();
+
+    long get_system_time();
+
+    long get_memory_usage();
 
     void execute() override;
 };

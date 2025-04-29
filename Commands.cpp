@@ -144,15 +144,16 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new QuitCommand(command_alias.c_str(), Jobs);
     } else if (cleaned_cmd_for_built_in == "kill" || firstWord == "kill" || first_of_command_alias == "kill") {
         return new QuitCommand(command_alias.c_str(), Jobs);
-    }else if (cleaned_cmd_for_built_in == "du" || firstWord == "du" || first_of_command_alias == "du") {
+    } else if (cleaned_cmd_for_built_in == "du" || firstWord == "du" || first_of_command_alias == "du") {
         return new DiskUsageCommand(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "alias" || firstWord == "alias" || first_of_command_alias == "alias") {
         return new AliasCommand(command_alias.c_str(), this);
     } else if (cleaned_cmd_for_built_in == "unalias" || firstWord == "unalias" || first_of_command_alias == "unalias") {
         return new UnAliasCommand(command_alias.c_str(), this);
-    } else if (cleaned_cmd_for_built_in == "watchproc" || firstWord == "watchproc" || first_of_command_alias == "watchproc"){
+    } else if (cleaned_cmd_for_built_in == "watchproc" || firstWord == "watchproc" ||
+               first_of_command_alias == "watchproc") {
         return new WatchProcCommand(command_alias.c_str());
-    } else if(cleaned_cmd_for_built_in == "whoami" || firstWord == "whoami" || first_of_command_alias == "whoami"){
+    } else if (cleaned_cmd_for_built_in == "whoami" || firstWord == "whoami" || first_of_command_alias == "whoami") {
         return new WhoAmICommand(command_alias.c_str());
     } else if (!firstWord.empty()) { ///external command
         return new ExternalCommand(command_alias.c_str(), Jobs);
@@ -306,7 +307,7 @@ void ShowPidCommand::execute() {
 GetCurrentDirectory::GetCurrentDirectory(const char *cmd_line) : BuiltInCommand(cmd_line) {}
 
 void GetCurrentDirectory::execute() {
-    char cwd[PATH_SIZE];
+    char cwd[COMMAND_MAX_ARGS];
     if (getcwd(cwd, sizeof(cwd)) != nullptr) {
         string curr_dir(cwd);
         cout << "Current working directory: " << curr_dir << endl;
@@ -328,8 +329,8 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
         return;
     }
 
-    char *Path = new char[PATH_SIZE];
-    if (getcwd(Path, PATH_SIZE) == nullptr) {
+    char *Path = new char[COMMAND_MAX_ARGS];
+    if (getcwd(Path, COMMAND_MAX_ARGS) == nullptr) {
         perror("smash error: getcwd failed");
         delete[] Path;
         return;
@@ -617,57 +618,146 @@ UnAliasCommand::UnAliasCommand(const char *cmd_line, SmallShell *shell) : BuiltI
     }
 }
 
+UnSetEnvCommand::UnSetEnvCommand(const char *cmd_line) : BuiltInCommand(cmd_line) {
+
+}
+
+void UnSetEnvCommand::execute() {
+    string pid = to_string(getpid());
+    string path = "/proc/" + pid + "/environ";
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+    }
+}
+
 WatchProcCommand::WatchProcCommand(const char *cmd_line) : BuiltInCommand(cmd_line), pid(arguments[1]) {
+}
+
+long WatchProcCommand::get_process_time() {
+
+    string path = "/proc/" + this->pid + "/stat";
+
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+    }
+
+    char *buffer = new char[BUFFER_SIZE];
+    ssize_t read_bytes = read(fd, buffer, BUFFER_SIZE);
+
+    if (read_bytes == -1) {
+        close(fd);
+        perror("smash error: read failed");
+    }
+
+    buffer[BUFFER_SIZE - 1] = '\0';
+
+    char *token = strtok(buffer, " ");
+    //for skipping unwanted data
+    for (int i = 0; i < 13; i++) token = strtok(nullptr, " ");
+
+    long utime = 0, stime = 0;
+
+    if (token != nullptr) {
+        utime = atol(token);
+        token = strtok(nullptr, " ");
+    }
+    if (token != nullptr) {
+        stime = atol(token);
+    }
+    long total_process_time = utime + stime;
+    close(fd);
+    return total_process_time;
+}
+
+long WatchProcCommand::get_system_time() {
+    string path = "/proc/" + this->pid + "/stat";
+
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+    }
+
+    char *buffer = new char[BUFFER_SIZE];
+    ssize_t read_bytes = read(fd, buffer, BUFFER_SIZE);
+
+    if (read_bytes == -1) {
+        close(fd);
+        perror("smash error: read failed");
+    }
+
+    buffer[BUFFER_SIZE - 1] = '\n';
+    char *line = strtok(buffer, "\n");
+    long total_system_time = 0;
+    if (line) {
+        char *token = strtok(buffer, " ");
+        int field = 0;
+        while (token) {
+            if (field > 0) {
+                total_system_time += atol(token);
+            }
+            field++;
+            token = strtok(buffer, " ");
+        }
+    }
+    close(fd);
+    return total_system_time;
+}
+
+long WatchProcCommand::get_memory_usage() {
+    string path = "/proc/" + this->pid + "/stat";
+
+    int fd = open(path.c_str(), O_RDONLY);
+    if (fd == -1) {
+        perror("smash error: open failed");
+    }
+
+    char *buffer = new char[BUFFER_SIZE];
+    ssize_t read_bytes = read(fd, buffer, BUFFER_SIZE);
+
+    if (read_bytes == -1) {
+        close(fd);
+        perror("smash error: read failed");
+    }
+
+    buffer[BUFFER_SIZE - 1] = '\0';
+    long memory_usage = 0;
+    char *line = strtok(buffer, "\n");
+    while (line) {
+        if (strncmp(line, "VmRSS:", 6) == 0) {
+            memory_usage = atol(line + 7);
+            break;
+        }
+        line = strtok(nullptr, "\n");
+    }
+
+    if (memory_usage == 0){
+        line = strtok(buffer, "\n");
+        while (line){
+            if (strncmp(line, "VmSize:", 7) == 0) {
+                memory_usage = atol(line + 8);
+                break;
+            }
+            line = strtok(nullptr, "\n");
+        }
+    }
+    close(fd);
+    return memory_usage;
 }
 
 void WatchProcCommand::execute() {
 
     cout << "PID: " + pid + " | ";
 
-    //getting the cpu usage
-    ifstream file("/proc/"+ this->pid +"/stat");
-    string line;
-    getline(file, line);
+    double cpu_usage = (get_process_time()/get_system_time()) * 100;
 
-    istringstream iss(line);
-    string temp;
-    long utime, stime, cutime, cstime;
-    long start_time;
-    int cpu;
-
-    //for skipping unwanted data
-    for (int i = 0; i < 13; i++) iss >> temp;
-    iss >> utime >> stime >> cutime >> cstime >> start_time;
-
-    int total_time = utime + stime + cutime + cstime;
-
-    //reading the total system time to calculate presentage
-    ifstream cpu_file("/proc/stat");
-    getline(cpu_file, line);
-    istringstream cpu_stream(line);
-    string processor;
-    long user, nice, system, idle, iowait, irq, softirg, steal;
-
-    cpu_stream >> cpu >> user >> nice >> system >> idle >> iowait >> irq >> softirg>> steal;
-
-    long total_system_time = cpu + nice + system + idle + iowait + irq + softirg + steal;
-    long idle_time = idle + iowait;
-
-    double cpu_usage = ((static_cast<double>(total_time) / total_system_time) * 100);
     cout << "CPU Usage: ";
     cout << fixed << setprecision(1) << cpu_usage;
     cout << " % | ";
 
 
-    //getting the memory usage values
-    string line_2, mem_key;
-    long mem_value = 0;
-    ifstream mem_file("/proc/" + pid + "/status");
-    while (getline(mem_file, line_2)){
-        istringstream iss(line_2);
-        iss >> mem_key >> mem_value;
-        if (mem_key == "VmRSS:") break;
-    }
+    long mem_value = get_memory_usage();
 
     double mem_usage_in_mb = mem_value / 1024;
     cout << "Memory Usage: ";
@@ -758,13 +848,12 @@ void DiskUsageCommand::execute() {
 }
 
 
-
 WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
 }
 
 void WhoAmICommand::execute() {
     struct passwd *info = getpwuid(getuid());
-    if (info){
+    if (info) {
         cout << info->pw_name;
         cout << " ";
         cout << info->pw_dir << endl;
@@ -853,7 +942,7 @@ void WhoAmICommand::execute() {
 //        perror("smash error: netinfo");
 //        return "";
 //    }
-//    char buffer[PATH_MAX];
+//    char buffer[BUFFER_SIZE];
 //    ssize_t bytesRead = read(fileDesc, buffer, sizeof(buffer) - 1);
 //    if (bytesRead == -1) {
 //        perror("smash error: netinfo");
@@ -893,7 +982,7 @@ void WhoAmICommand::execute() {
 //        cerr << "smash error: netinfo: unable to open /etc/resolv.conf" << endl;
 //        return dnsServers;
 //    }
-//    char buffer[PATH_MAX];
+//    char buffer[BUFFER_SIZE];
 //    ssize_t bytesRead = read(fileDesc, buffer, sizeof(buffer) - 1);
 //    if (bytesRead == -1) {
 //        perror("smash error: netinfo");
@@ -981,11 +1070,11 @@ void PipeCommand::execute() {
     int cutoff;
     int type;
     cutoff = command.find("|&");
-    if(cutoff != -1){
+    if (cutoff != -1) {
         type = 2;
     } else {
         cutoff = command.find("|");
-        if(cutoff != -1){
+        if (cutoff != -1) {
             type = 1;
         } else {
             std::cerr << "smash error: invalid pipe command" << std::endl;
@@ -995,28 +1084,28 @@ void PipeCommand::execute() {
 
     string Command2 = "";
     string Command1 = command.substr(0, cutoff);
-    if(type == 1){
+    if (type == 1) {
         Command2 = command.substr(cutoff + 1);
     } else {
         Command2 = command.substr(cutoff + 2);
     }
 
     int fd[2];
-    if(pipe(fd) == -1){
+    if (pipe(fd) == -1) {
         perror("smash error: pipe failed");
         return;
     }
 
     pid_t pid1 = fork();
     pid_t pid2 = fork();
-    if(pid2 < 0 || pid1 < 0){
+    if (pid2 < 0 || pid1 < 0) {
         perror("smash error: fork failed");
     }
 
-    if(pid1 == 0){
+    if (pid1 == 0) {
         setpgrp();
         close(fd[0]);
-        if(type == 1){
+        if (type == 1) {
             dup2(fd[1], STDOUT_FILENO);
         } else {
             dup2(fd[1], STDERR_FILENO);
@@ -1026,7 +1115,7 @@ void PipeCommand::execute() {
         exit(0);
     }
 
-    if(pid2 == 0){
+    if (pid2 == 0) {
         setpgrp();
         close(fd[1]);
         dup2(fd[0], STDIN_FILENO);
