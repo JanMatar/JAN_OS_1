@@ -309,7 +309,7 @@ void ShowPidCommand::execute() {
 GetCurrentDirectory::GetCurrentDirectory(const char *cmd_line) : BuiltInCommand(cmd_line) {}
 
 void GetCurrentDirectory::execute() {
-    char cwd[COMMAND_MAX_ARGS];
+    char cwd[BUFFER_SIZE];
     if (getcwd(cwd, sizeof(cwd)) != nullptr) {
         string curr_dir(cwd);
         cout << "Current working directory: " << curr_dir << endl;
