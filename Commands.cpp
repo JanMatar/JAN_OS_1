@@ -145,7 +145,7 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     } else if (cleaned_cmd_for_built_in == "quit" || firstWord == "quit" || first_of_command_alias == "quit") {
         return new QuitCommand(command_alias.c_str(), Jobs);
     } else if (cleaned_cmd_for_built_in == "kill" || firstWord == "kill" || first_of_command_alias == "kill") {
-        return new QuitCommand(command_alias.c_str(), Jobs);
+        return new KillCommand(command_alias.c_str(), Jobs);
     } else if (cleaned_cmd_for_built_in == "du" || firstWord == "du" || first_of_command_alias == "du") {
         return new DiskUsageCommand(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "alias" || firstWord == "alias" || first_of_command_alias == "alias") {
