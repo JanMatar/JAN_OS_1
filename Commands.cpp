@@ -667,6 +667,7 @@ long WatchProcCommand::get_process_time() {
         stime = atol(token);
     }
     long total_process_time = utime + stime;
+    free(buffer);
     close(fd);
     return total_process_time;
 }
@@ -684,6 +685,7 @@ long WatchProcCommand::get_system_time() {
 
     if (read_bytes == -1) {
         close(fd);
+        free(buffer);
         perror("smash error: read failed");
     }
 
@@ -698,9 +700,10 @@ long WatchProcCommand::get_system_time() {
                 total_system_time += atol(token);
             }
             field++;
-            token = strtok(buffer, " ");
+            token = strtok(nullptr, " ");
         }
     }
+    free(buffer);
     close(fd);
     return total_system_time;
 }
@@ -718,6 +721,7 @@ long WatchProcCommand::get_memory_usage() {
 
     if (read_bytes == -1) {
         close(fd);
+        free(buffer);
         perror("smash error: read failed");
     }
 
@@ -742,6 +746,7 @@ long WatchProcCommand::get_memory_usage() {
             line = strtok(nullptr, "\n");
         }
     }
+    free(buffer);
     close(fd);
     return memory_usage;
 }
@@ -852,14 +857,40 @@ WhoAmICommand::WhoAmICommand(const char *cmd_line) : Command(cmd_line) {
 }
 
 void WhoAmICommand::execute() {
-    struct passwd *info = getpwuid(getuid());
-    if (info) {
-        cout << info->pw_name;
-        cout << " ";
-        cout << info->pw_dir << endl;
-    } else {
-        perror("smash error: failed to get user information");
+    int fd = open("/etc/passwd", O_RDONLY);
+    if (fd == -1){
+        perror("smash error: open failed");
     }
+    char buffer[2 * BUFFER_SIZE];
+    ssize_t read_bytes = read(fd, buffer, 2 * BUFFER_SIZE - 1);
+    close(fd);
+
+    if (read_bytes <= 0 ){
+        perror("smash error: read failed");
+    }
+
+    buffer[2 * BUFFER_SIZE - 1] = '\0';
+    char* line = strtok(buffer, "\n");
+    while (line){
+        char* copy = strdup(line);
+
+        char* fields[7] = {nullptr};
+        int i = 0;
+        char* token = strtok(copy, ":");
+        while (token && i < 7){
+            fields[i++] = token;
+            token = strtok(nullptr, ":");
+        }
+        if (fields[2] && atoi(fields[2]) == getuid()){
+            cout << fields[0] << " " << fields[5] << endl;
+            free(copy);
+            return;
+        }
+        free(copy);
+        line = strtok(nullptr, "\n");
+    }
+
+
 }
 
 //static string fetchIpAddress(const string &networkInterface) {
