@@ -16,6 +16,9 @@
 #include <iomanip>
 #include <cstdlib>
 #include <sys/syscall.h>
+#include <ifaddrs.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 
 
 using namespace std;
@@ -131,6 +134,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new RedirectionCommand(cmd_line, this);
     } else if (cmd_s.find("|&") != string::npos || cmd_s.find("|") != string::npos) {
         return new PipeCommand(cmd_line);
+    } else if (cleaned_cmd_for_built_in == "netinfo" || firstWord == "netinfo" || first_of_command_alias == "netinfo") {
+        return new NetInfo(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "pwd" || firstWord == "pwd" || first_of_command_alias == "pwd") {
         return new GetCurrentDirectory(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "showpid" || firstWord == "showpid" || first_of_command_alias == "showpid") {
@@ -364,7 +369,7 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
 
 void ChangeDirectoryCommand::execute() {}
 
-JobsList::JobsList() : MaxId(1), number_of_jobs(0), job_entries_vec_in_jobslist{} {}
+JobsList::JobsList() : MaxId(0), number_of_jobs(0), job_entries_vec_in_jobslist{} {}
 
 JobsList::~JobsList() {
     for (auto &it: job_entries_vec_in_jobslist) {
@@ -374,7 +379,7 @@ JobsList::~JobsList() {
 
 void JobsList::addJob(pid_t pid, ExternalCommand *cmd, bool isStopped) {
     removeFinishedJobs();
-    JobEntry *temp = new JobEntry(cmd, MaxId, pid);
+    JobEntry *temp = new JobEntry(cmd, MaxId + 1, pid);
     job_entries_vec_in_jobslist.push_back(temp);
     MaxId++;
     number_of_jobs++;
@@ -407,7 +412,7 @@ void JobsList::removeJobById(int jobId) {
             a = job_entries_vec_in_jobslist.erase(a);
             number_of_jobs -= 1;
             if (number_of_jobs == 0) {
-                MaxId = 1;
+                MaxId = 0;
             } else {
                 MaxId = job_entries_vec_in_jobslist[number_of_jobs - 1]->JobId;
             }
@@ -448,7 +453,7 @@ void JobsList::removeFinishedJobs() {
             a = job_entries_vec_in_jobslist.erase(a);
             number_of_jobs -= 1;
             if (number_of_jobs == 0) {
-                MaxId = 1;
+                MaxId = 0;
             } else {
                 MaxId = job_entries_vec_in_jobslist[number_of_jobs - 1]->JobId;
             }
@@ -1034,209 +1039,216 @@ void WhoAmICommand::execute() {
     close(fd);
 }
 
+// Fetch IP address using low-level system calls
+static string fetchIpAddress(const string &networkInterface) {
+    struct ifaddrs *interfaceList = nullptr;
+    void *addressPointer = nullptr;
 
+    if (getifaddrs(&interfaceList) == -1) {
+        cerr << "smash error: netinfo: unable to get IP address for interface " << networkInterface << endl;
+        return "";
+    }
 
+    for (struct ifaddrs *currentInterface = interfaceList; currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
+        if (currentInterface->ifa_addr->sa_family == AF_INET) {
+            if (networkInterface == currentInterface->ifa_name) {
+                addressPointer = &((struct sockaddr_in *)currentInterface->ifa_addr)->sin_addr;
+                char ipBuffer[INET_ADDRSTRLEN];
+                unsigned char *ip = (unsigned char *)&((struct sockaddr_in *)addressPointer)->sin_addr;
+                snprintf(ipBuffer, INET_ADDRSTRLEN, "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+                freeifaddrs(interfaceList);
+                return string(ipBuffer);
+            }
+        }
+    }
 
-//static string fetchIpAddress(const string &networkInterface) {
-//    struct ifaddrs *interfaceList = nullptr;
-//    void *addressPointer = nullptr;
-//
-//    if (getifaddrs(&interfaceList) == -1) {
-//        cerr << "smash error: netinfo: unable to get IP address for interface " << networkInterface << endl;
-//        return "";
-//    }
-//
-//    // Loop through the network interfaces
-//    for (struct ifaddrs *currentInterface = interfaceList; currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
-//        if (currentInterface->ifa_addr->sa_family == AF_INET) {
-//            if (networkInterface == currentInterface->ifa_name) {
-//                addressPointer = &((struct sockaddr_in *)currentInterface->ifa_addr)->sin_addr;
-//                char ipBuffer[INET_ADDRSTRLEN];
-//                inet_ntop(AF_INET, addressPointer, ipBuffer, INET_ADDRSTRLEN);
-//                freeifaddrs(interfaceList);
-//                return string(ipBuffer);
-//            }
-//        }
-//    }
-//    freeifaddrs(interfaceList);
-//    cerr << "smash error: netinfo: interface " << networkInterface << " does not have an IP address" << endl;
-//    return "";
-//}
-//
-//static string fetchSubnetMask(const string &networkInterface) {
-//    struct ifaddrs *interfaceList = nullptr;
-//    void *addressPointer = nullptr;
-//
-//    if (getifaddrs(&interfaceList) == -1) {
-//        cerr << "smash error: netinfo: unable to get subnet mask for interface " << networkInterface << endl;
-//        return "";
-//    }
-//
-//    // Loop through the network interfaces
-//    for (struct ifaddrs *currentInterface = interfaceList; currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
-//        if (currentInterface->ifa_addr->sa_family == AF_INET) {
-//            if (networkInterface == currentInterface->ifa_name) {
-//                addressPointer = &((struct sockaddr_in *)currentInterface->ifa_netmask)->sin_addr;
-//                char subnetBuffer[INET_ADDRSTRLEN];
-//                inet_ntop(AF_INET, addressPointer, subnetBuffer, INET_ADDRSTRLEN);
-//                freeifaddrs(interfaceList);
-//                return string(subnetBuffer);
-//            }
-//        }
-//    }
-//    freeifaddrs(interfaceList);
-//    cerr << "smash error: netinfo: interface " << networkInterface << " does not have a subnet mask" << endl;
-//    return "";
-//}
-//
-//static string parseGatewayInfo(const string &networkInterface, char *lineContent) {
-//    char *lineFields[16];
-//    while (lineContent != NULL) {
-//        int fieldCount = _parseCommandLine(lineContent, lineFields);
-//
-//        if (fieldCount < 3 || strcmp(lineFields[0], "Iface") == 0) {
-//            lineContent = strtok(NULL, "\n");
-//            continue;
-//        }
-//        if (networkInterface == lineFields[0]) {
-//            if (strcmp(lineFields[1], "00000000") == 0) {
-//                unsigned long gatewayAddress = strtoul(lineFields[2], nullptr, 16);
-//                struct in_addr gatewayAddr;
-//                gatewayAddr.s_addr = gatewayAddress;
-//                return inet_ntoa(gatewayAddr);
-//            }
-//        }
-//        lineContent = strtok(NULL, "\n");
-//    }
-//    return "";
-//}
-//
-//static string fetchDefaultGateway(const string &networkInterface) {
-//    int fileDesc = open("/proc/net/route", O_RDONLY);
-//    if (fileDesc == -1) {
-//        perror("smash error: netinfo");
-//        return "";
-//    }
-//    char buffer[BUFFER_SIZE];
-//    ssize_t bytesRead = read(fileDesc, buffer, sizeof(buffer) - 1);
-//    if (bytesRead == -1) {
-//        perror("smash error: netinfo");
-//        close(fileDesc);
-//        return "";
-//    }
-//    buffer[bytesRead] = '\0';
-//    close(fileDesc);
-//
-//    char *lineContent = strtok(buffer, "\n");
-//
-//    return parseGatewayInfo(networkInterface, lineContent);
-//}
-//
-//static vector<string> extractDnsServers(char *bufferContent) {
-//    char *lineContent = strtok(bufferContent, "\n");
-//    char *lineFields[16];
-//    vector<string> dnsServers;
-//    while (lineContent != NULL) {
-//        int fieldCount = _parseCommandLine(lineContent, lineFields);
-//        if (fieldCount < 2) {
-//            lineContent = strtok(NULL, "\n");
-//            continue;
-//        }
-//        if (strcmp(lineFields[0], "nameserver") == 0) {
-//            dnsServers.push_back(string(lineFields[1]));
-//        }
-//        lineContent = strtok(NULL, "\n");
-//    }
-//    return dnsServers;
-//}
-//
-//static vector<string> fetchDnsServers() {
-//    int fileDesc = open("/etc/resolv.conf", O_RDONLY);
-//    vector<string> dnsServers;
-//    if (fileDesc == -1) {
-//        cerr << "smash error: netinfo: unable to open /etc/resolv.conf" << endl;
-//        return dnsServers;
-//    }
-//    char buffer[BUFFER_SIZE];
-//    ssize_t bytesRead = read(fileDesc, buffer, sizeof(buffer) - 1);
-//    if (bytesRead == -1) {
-//        perror("smash error: netinfo");
-//        if(close(fileDesc) == -1){
-//            perror("smash error: close failed");
-//        }
-//        return dnsServers;
-//    }
-//    buffer[bytesRead] = '\0';
-//    close(fileDesc);
-//    dnsServers = extractDnsServers(buffer);
-//    return dnsServers;
-//}
-//
-//
-//NetInfo::NetInfo(const char *cmd_line) { interfaceFound = false;  // No need for toIgnore flag anymore
-//
-//    if (_isBackgroundComamnd(cmd_line)) {
-//        _removeBackgroundSign(cmd_line);  // Clean background symbol if present
-//    }
-//
-//    char *argumentsArray[COMMAND_MAX_ARGS];
-//    _parseCommandLine(cmd_line, argumentsArray);
-//
-//    if (argumentsArray[1] == nullptr) {
-//        cerr << "smash error: netinfo: no interface specified" << endl;
-//        interfaceFound = false;
-//        return;
-//    }
-//
-//    string networkInterface = argumentsArray[1];
-//
-//    // Retrieve IP address for the interface
-//    ipAddress = fetchIpAddress(networkInterface);
-//    if (ipAddress.empty()) {
-//        interfaceFound = false;
-//        return;
-//    }
-//
-//    // Retrieve Subnet Mask
-//    subnetMask = fetchSubnetMask(networkInterface);
-//    if (subnetMask.empty()) {
-//        interfaceFound = false;
-//        return;
-//    }
-//
-//    // Retrieve Default Gateway
-//    defaultGateway = fetchDefaultGateway(networkInterface);
-//    if (defaultGateway.empty()) {
-//        interfaceFound = false;
-//        return;
-//    }
-//
-//    // Retrieve DNS Servers
-//    dnsServers = fetchDnsServers();
-//    if (dnsServers.empty()) {
-//        interfaceFound = false;
-//        return;
-//    }
-//
-//    interfaceFound = true;  // Set flag to true if everything is retrieved successfully
-//}
-//
-//void NetInfo::execute() {
-//    if (interfaceFound) {
-//        // Display the retrieved network information
-//        cout << "IP Address: " << ipAddress << endl;
-//        cout << "Subnet Mask: " << subnetMask << endl;
-//        cout << "Default Gateway: " << defaultGateway << endl;
-//        cout << "DNS Servers: ";
-//        for (size_t i = 0; i < dnsServers.size(); ++i) {
-//            cout << dnsServers[i];
-//            if (i != dnsServers.size() - 1) {
-//                cout << ", ";
-//            }
-//        }
-//        cout << endl;
-//    }
-//}
+    freeifaddrs(interfaceList);
+    cerr << "smash error: netinfo: interface " << networkInterface << " does not have an IP address" << endl;
+    return "";
+}
+
+// Fetch subnet mask using low-level system calls
+static string fetchSubnetMask(const string &networkInterface) {
+    struct ifaddrs *interfaceList = nullptr;
+    void *addressPointer = nullptr;
+
+    if (getifaddrs(&interfaceList) == -1) {
+        cerr << "smash error: netinfo: unable to get subnet mask for interface " << networkInterface << endl;
+        return "";
+    }
+
+    for (struct ifaddrs *currentInterface = interfaceList; currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
+        if (currentInterface->ifa_addr->sa_family == AF_INET) {
+            if (networkInterface == currentInterface->ifa_name) {
+                addressPointer = &((struct sockaddr_in *)currentInterface->ifa_netmask)->sin_addr;
+                char subnetBuffer[INET_ADDRSTRLEN];
+                unsigned char *subnet = (unsigned char *)&((struct sockaddr_in *)addressPointer)->sin_addr;
+                snprintf(subnetBuffer, INET_ADDRSTRLEN, "%u.%u.%u.%u", subnet[0], subnet[1], subnet[2], subnet[3]);
+                freeifaddrs(interfaceList);
+                return string(subnetBuffer);
+            }
+        }
+    }
+
+    freeifaddrs(interfaceList);
+    cerr << "smash error: netinfo: interface " << networkInterface << " does not have a subnet mask" << endl;
+    return "";
+}
+
+// Parse gateway information from /proc/net/route
+static string parseGatewayInfo(const string &networkInterface, char *lineContent) {
+    char *lineFields[16];
+
+    while (lineContent != NULL) {
+        int fieldCount = _parseCommandLine(lineContent, lineFields);
+
+        if (fieldCount < 3 || strcmp(lineFields[0], "Iface") == 0) {
+            lineContent = strtok(NULL, "\n");
+            continue;
+        }
+        if (networkInterface == lineFields[0]) {
+            if (strcmp(lineFields[1], "00000000") == 0) {
+                unsigned long gatewayAddress = strtoul(lineFields[2], nullptr, 16);
+                struct in_addr gatewayAddr;
+                gatewayAddr.s_addr = gatewayAddress;
+                char gatewayBuffer[INET_ADDRSTRLEN];
+                unsigned char *gateway = (unsigned char *)&gatewayAddr.s_addr;
+                snprintf(gatewayBuffer, INET_ADDRSTRLEN, "%u.%u.%u.%u", gateway[0], gateway[1], gateway[2], gateway[3]);
+                return string(gatewayBuffer);
+            }
+        }
+        lineContent = strtok(NULL, "\n");
+    }
+
+    return "";
+}
+
+// Fetch the default gateway from /proc/net/route
+static string fetchDefaultGateway(const string &networkInterface) {
+    int fileDesc = open("/proc/net/route", O_RDONLY);
+    if (fileDesc == -1) {
+        perror("smash error: netinfo");
+        return "";
+    }
+    char buffer[BUFFER_SIZE];
+    ssize_t bytesRead = read(fileDesc, buffer, sizeof(buffer) - 1);
+    if (bytesRead == -1) {
+        perror("smash error: netinfo");
+        close(fileDesc);
+        return "";
+    }
+    buffer[bytesRead] = '\0';
+    close(fileDesc);
+
+    char *lineContent = strtok(buffer, "\n");
+    return parseGatewayInfo(networkInterface, lineContent);
+}
+
+// Extract DNS server addresses from /etc/resolv.conf
+static vector<string> extractDnsServers(char *bufferContent) {
+    char *lineContent = strtok(bufferContent, "\n");
+    char *lineFields[16];
+    vector<string> dnsServers;
+
+    while (lineContent != NULL) {
+        int fieldCount = _parseCommandLine(lineContent, lineFields);
+        if (fieldCount < 2) {
+            lineContent = strtok(NULL, "\n");
+            continue;
+        }
+        if (strcmp(lineFields[0], "nameserver") == 0) {
+            dnsServers.push_back(string(lineFields[1]));
+        }
+        lineContent = strtok(NULL, "\n");
+    }
+    return dnsServers;
+}
+
+// Fetch DNS servers from /etc/resolv.conf
+static vector<string> fetchDnsServers() {
+    int fileDesc = open("/etc/resolv.conf", O_RDONLY);
+    vector<string> dnsServers;
+    if (fileDesc == -1) {
+        cerr << "smash error: netinfo: unable to open /etc/resolv.conf" << endl;
+        return dnsServers;
+    }
+    char buffer[BUFFER_SIZE];
+    ssize_t bytesRead = read(fileDesc, buffer, sizeof(buffer) - 1);
+    if (bytesRead == -1) {
+        perror("smash error: netinfo");
+        close(fileDesc);
+        return dnsServers;
+    }
+    buffer[bytesRead] = '\0';
+    close(fileDesc);
+
+    dnsServers = extractDnsServers(buffer);
+    return dnsServers;
+}
+
+// Constructor for NetInfo
+NetInfo::NetInfo(const char *cmd_line) : Command(cmd_line) {
+    interfaceFound = false;
+
+    if (_isBackgroundComamnd(cmd_line)) {
+        _removeBackgroundSign(cmd_line);
+    }
+
+    char *argumentsArray[COMMAND_MAX_ARGS];
+    _parseCommandLine(cmd_line, argumentsArray);
+
+    if (argumentsArray[1] == nullptr) {
+        cerr << "smash error: netinfo: no interface specified" << endl;
+        interfaceFound = false;
+        return;
+    }
+
+    string networkInterface = argumentsArray[1];
+
+    ipAddress = fetchIpAddress(networkInterface);
+    if (ipAddress.empty()) {
+        interfaceFound = false;
+        return;
+    }
+
+    subnetMask = fetchSubnetMask(networkInterface);
+    if (subnetMask.empty()) {
+        interfaceFound = false;
+        return;
+    }
+
+    defaultGateway = fetchDefaultGateway(networkInterface);
+    if (defaultGateway.empty()) {
+        interfaceFound = false;
+        return;
+    }
+
+    dnsServers = fetchDnsServers();
+    if (dnsServers.empty()) {
+        interfaceFound = false;
+        return;
+    }
+
+    interfaceFound = true;
+}
+
+// Execute the command and display network information
+void NetInfo::execute() {
+    if (interfaceFound) {
+        cout << "IP Address: " << ipAddress << endl;
+        cout << "Subnet Mask: " << subnetMask << endl;
+        cout << "Default Gateway: " << defaultGateway << endl;
+        cout << "DNS Servers: ";
+        for (size_t i = 0; i < dnsServers.size(); ++i) {
+            cout << dnsServers[i];
+            if (i != dnsServers.size() - 1) {
+                cout << ", ";
+            }
+        }
+        cout << endl;
+    }
+}
+
 
 PipeCommand::PipeCommand(const char *cmd_line) : Command(cmd_line) {}
 
