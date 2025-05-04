@@ -129,6 +129,8 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     string first_of_command_alias = command_alias.substr(0, command_alias.find_first_of(" \n"));
     if (cmd_s.find(">") != string::npos || cmd_s.find(">>") != string::npos) {
         return new RedirectionCommand(cmd_line, this);
+    } else if (cmd_s.find("|&") != string::npos || cmd_s.find("|") != string::npos) {
+        return new PipeCommand(cmd_line);
     } else if (cleaned_cmd_for_built_in == "pwd" || firstWord == "pwd" || first_of_command_alias == "pwd") {
         return new GetCurrentDirectory(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "showpid" || firstWord == "showpid" || first_of_command_alias == "showpid") {
@@ -405,7 +407,7 @@ void JobsList::removeJobById(int jobId) {
             a = job_entries_vec_in_jobslist.erase(a);
             number_of_jobs -= 1;
             if (number_of_jobs == 0) {
-                MaxId = 0;
+                MaxId = 1;
             } else {
                 MaxId = job_entries_vec_in_jobslist[number_of_jobs - 1]->JobId;
             }
@@ -446,7 +448,7 @@ void JobsList::removeFinishedJobs() {
             a = job_entries_vec_in_jobslist.erase(a);
             number_of_jobs -= 1;
             if (number_of_jobs == 0) {
-                MaxId = 0;
+                MaxId = 1;
             } else {
                 MaxId = job_entries_vec_in_jobslist[number_of_jobs - 1]->JobId;
             }
@@ -513,29 +515,43 @@ void QuitCommand::execute() {
 
 KillCommand::KillCommand(const char *cmd_line, JobsList *jobs) : BuiltInCommand(cmd_line), Jobs(jobs) {
     Jobs->removeFinishedJobs();
+
+    // Ensure correct number of arguments
     if (arguments.size() != 3) {
         cerr << "smash error: kill: invalid arguments" << endl;
-    }
-    int jobid = 0;
-    int signal = 0;
-    try {
-        signal = stoi(arguments[1].substr(1));
-        jobid = stoi(arguments[2]);
-    } catch (...) {
-        cerr << "smash error: kill: invalid arguments" << endl;
+        return;
     }
 
-    JobsList::JobEntry *Job = Jobs->getJobById(jobid);
+    int jobid = 0;
+    int signal = 0;
+
+    // Parse the signal number, ensure it starts with '-'
     if (arguments[1][0] != '-') {
         cerr << "smash error: kill: invalid arguments" << endl;
-    } else if (Job == nullptr) {
-        cerr << "smash error: kill: job-id " << stoi(arguments[2]) << " does not exist" << endl;
+        return;
+    }
+
+    try {
+        // Strip the '-' and convert the remaining part to an integer
+        signal = stoi(arguments[1].substr(1));  // Start parsing from position 1 to skip the '-'
+        jobid = stoi(arguments[2]);
+    } catch (const exception &e) {
+        cerr << "smash error: kill: invalid arguments" << endl;
+        return;
+    }
+
+    // Get the job by ID
+    JobsList::JobEntry *Job = Jobs->getJobById(jobid);
+    if (Job == nullptr) {
+        cerr << "smash error: kill: job-id " << jobid << " does not exist" << endl;
+        return;
+    }
+
+    // Send the signal to the job's process
+    if (kill(Job->pid, signal) == -1) {
+        perror("smash error: kill failed");
     } else {
-        if (kill(Job->pid, signal) == -1) {
-            perror("smash error: kill failed");
-        } else {
-            cout << "signal number " << signal << " was sent to pid " << Job->pid << endl;
-        }
+        cout << "signal number " << signal << " was sent to pid " << Job->pid << endl;
     }
 }
 
@@ -1227,14 +1243,18 @@ PipeCommand::PipeCommand(const char *cmd_line) : Command(cmd_line) {}
 void PipeCommand::execute() {
     string command = _trim(getCmdLine());
     int cutoff;
-    int type;
+    int type = 0; // 1 for '|', 2 for '|&'
+
+    // Check if it's a pipe with stderr redirect (`|&`)
     cutoff = command.find("|&");
     if (cutoff != -1) {
-        type = 2;
-    } else {
+        type = 2;  // Indicating '|&'
+    }
+        // Otherwise check if it's a simple pipe (`|`)
+    else {
         cutoff = command.find("|");
         if (cutoff != -1) {
-            type = 1;
+            type = 1;  // Indicating '|'
         } else {
             std::cerr << "smash error: invalid pipe command" << std::endl;
             return;
@@ -1244,9 +1264,9 @@ void PipeCommand::execute() {
     string Command2 = "";
     string Command1 = command.substr(0, cutoff);
     if (type == 1) {
-        Command2 = command.substr(cutoff + 1);
+        Command2 = command.substr(cutoff + 1);  // For '|'
     } else {
-        Command2 = command.substr(cutoff + 2);
+        Command2 = command.substr(cutoff + 2);  // Skips the "|&"
     }
 
     int fd[2];
@@ -1256,35 +1276,42 @@ void PipeCommand::execute() {
     }
 
     pid_t pid1 = fork();
-    pid_t pid2 = fork();
-    if (pid2 < 0 || pid1 < 0) {
+    if (pid1 < 0) {
         perror("smash error: fork failed");
+        return;
     }
 
-    if (pid1 == 0) {
+    if (pid1 == 0) {  // Child process for command 1
         setpgrp();
-        close(fd[0]);
+        close(fd[0]); // Close the read end of the pipe
         if (type == 1) {
-            dup2(fd[1], STDOUT_FILENO);
-        } else {
-            dup2(fd[1], STDERR_FILENO);
+            dup2(fd[1], STDOUT_FILENO);  // For '|': Redirect stdout to pipe
+        } else if (type == 2) {
+            dup2(fd[1], STDERR_FILENO);  // For '|&': Redirect stderr to pipe
         }
         close(fd[1]);
         SmallShell::getInstance().executeCommand(Command1.c_str());
         exit(0);
     }
 
-    if (pid2 == 0) {
+    pid_t pid2 = fork();
+    if (pid2 < 0) {
+        perror("smash error: fork failed");
+        return;
+    }
+
+    if (pid2 == 0) {  // Child process for command 2
         setpgrp();
-        close(fd[1]);
-        dup2(fd[0], STDIN_FILENO);
+        close(fd[1]);  // Close the write end of the pipe
+        dup2(fd[0], STDIN_FILENO);  // Redirect stdin from pipe (the stderr of command1)
         close(fd[0]);
         SmallShell::getInstance().executeCommand(Command2.c_str());
         exit(0);
     }
 
+    // Parent process
     close(fd[0]);
     close(fd[1]);
-    waitpid(pid1, nullptr, 0);
+    waitpid(pid1, nullptr, 0);  // Wait for both child processes to finish
     waitpid(pid2, nullptr, 0);
 }
