@@ -1,3 +1,0 @@
-C:/Users/Jan/Desktop/JAN_OS_1/cmake-build-debug/CMakeFiles/JAN_OS_1.dir
-C:/Users/Jan/Desktop/JAN_OS_1/cmake-build-debug/CMakeFiles/edit_cache.dir
-C:/Users/Jan/Desktop/JAN_OS_1/cmake-build-debug/CMakeFiles/rebuild_cache.dir
