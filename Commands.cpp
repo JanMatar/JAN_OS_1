@@ -152,10 +152,10 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new AliasCommand(command_alias.c_str(), this);
     } else if (cleaned_cmd_for_built_in == "unalias" || firstWord == "unalias" || first_of_command_alias == "unalias") {
         return new UnAliasCommand(command_alias.c_str(), this);
-    }else if (cleaned_cmd_for_built_in == "unsetenv" || firstWord == "unsetenv" ||
-              first_of_command_alias == "unsetenv") {
+    } else if (cleaned_cmd_for_built_in == "unsetenv" || firstWord == "unsetenv" ||
+               first_of_command_alias == "unsetenv") {
         return new UnSetEnvCommand(command_alias.c_str());
-    }else if (cleaned_cmd_for_built_in == "watchproc" || firstWord == "watchproc" ||
+    } else if (cleaned_cmd_for_built_in == "watchproc" || firstWord == "watchproc" ||
                first_of_command_alias == "watchproc") {
         return new WatchProcCommand(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "whoami" || firstWord == "whoami" || first_of_command_alias == "whoami") {
@@ -334,30 +334,41 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
         return;
     }
 
-    char *Path = new char[COMMAND_MAX_ARGS];
-    if (getcwd(Path, COMMAND_MAX_ARGS) == nullptr) {
+    char *Path = new char[BUFFER_SIZE];
+    if (getcwd(Path, BUFFER_SIZE) == nullptr) {
         perror("smash error: getcwd failed");
         delete[] Path;
         return;
     }
 
-    if (arguments[1] == "-") {
-        {
-            char *temp = shell->GetPreviousPath();
-            if (chdir(temp) == -1) {
+    if (arguments[1] == "..") {
+        string string_path(Path);
+        string parent_path = string_path.substr(0, string_path.find_last_of("/"));
+        if (chdir(parent_path.c_str()) == -1) {
+            perror("smash error: chdir failed");
+        } else {
+            shell->SetPreviousPath(Path); //this is to use the string as a char*
+        }
+    } else {
+        if (arguments[1] == "-") {
+            {
+                char *temp = shell->GetPreviousPath();
+                if (chdir(temp) == -1) {
+                    perror("smash error: chdir failed");
+                } else {
+                    shell->SetPreviousPath(Path);
+                }
+            }
+        } else {
+            string temp = arguments[1];
+            if (chdir(temp.c_str()) == -1) {
                 perror("smash error: chdir failed");
             } else {
                 shell->SetPreviousPath(Path);
             }
         }
-    } else {
-        string temp = arguments[1];
-        if (chdir(temp.c_str()) == -1) {
-            perror("smash error: chdir failed");
-        } else {
-            shell->SetPreviousPath(Path);
-        }
     }
+    delete[] Path;
 }
 
 void ChangeDirectoryCommand::execute() {}
@@ -677,7 +688,7 @@ void UnSetEnvCommand::execute() {
 //
 //    }
 
-    if (arguments.size() == 1){
+    if (arguments.size() == 1) {
         perror("smash error: unsetenv: not enough arguments");
         return;
     }
@@ -698,11 +709,11 @@ void UnSetEnvCommand::execute() {
     buffer[2 * BUFFER_SIZE - 1] = '\0';
 
     for (size_t a = 1; a < arguments.size(); a++) { // start from 1 to skip "unsetenv"
-        const string& key = arguments[a];
+        const string &key = arguments[a];
         bool found = false;
 
         //here we go over all environments for each argument to be able to handle the error of the argument not existing
-        char* ptr = buffer;
+        char *ptr = buffer;
         while (ptr < buffer + read_bytes) {//while not in the end of the buffer
             string entry(ptr);
             size_t pos = entry.find('=');
@@ -864,7 +875,7 @@ void WatchProcCommand::execute() {
     string path_1 = "/proc/" + this->pid + "/stat";
     string path_2 = "/proc/" + this->pid + "/status";
 
-    if ((access(path_1.c_str(), F_OK) == -1) || (access(path_2.c_str(), F_OK == -1))){
+    if ((access(path_1.c_str(), F_OK) == -1) || (access(path_2.c_str(), F_OK == -1))) {
         cerr << "smash error: watchproc: pid " << this->pid << " does not exist" << endl;
         return;
     }
