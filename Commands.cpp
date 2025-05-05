@@ -898,7 +898,15 @@ void WatchProcCommand::execute() {
 
     cout << "PID: " + pid + " | ";
 
-    double cpu_usage = (get_process_time() / get_system_time()) * 100;
+    long process_time_1 = get_process_time();
+    long system_time_1 = get_system_time();
+
+    sleep(1);
+
+    long process_time_2 = get_process_time();
+    long system_time_2 = get_system_time();
+
+    double cpu_usage = ((process_time_2 - process_time_1) / (system_time_2 - system_time_1)) * 100;
 
     cout << "CPU Usage: ";
     cout << fixed << setprecision(1) << cpu_usage;
