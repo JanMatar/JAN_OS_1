@@ -127,7 +127,9 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     }
 
     string first_of_command_alias = command_alias.substr(0, command_alias.find_first_of(" \n"));
-    if (cmd_s.find(">") != string::npos || cmd_s.find(">>") != string::npos) {
+    if (cleaned_cmd_for_built_in == "alias" || firstWord == "alias" || first_of_command_alias == "alias") {
+        return new AliasCommand(command_alias.c_str(), this);
+    } else if (cmd_s.find(">") != string::npos || cmd_s.find(">>") != string::npos) {
         return new RedirectionCommand(cmd_line, this);
     } else if (cmd_s.find("|&") != string::npos || cmd_s.find("|") != string::npos) {
         return new PipeCommand(cmd_line);
@@ -150,8 +152,6 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new KillCommand(command_alias.c_str(), Jobs);
     } else if (cleaned_cmd_for_built_in == "du" || firstWord == "du" || first_of_command_alias == "du") {
         return new DiskUsageCommand(command_alias.c_str());
-    } else if (cleaned_cmd_for_built_in == "alias" || firstWord == "alias" || first_of_command_alias == "alias") {
-        return new AliasCommand(command_alias.c_str(), this);
     } else if (cleaned_cmd_for_built_in == "unalias" || firstWord == "unalias" || first_of_command_alias == "unalias") {
         return new UnAliasCommand(command_alias.c_str(), this);
     } else if (cleaned_cmd_for_built_in == "unsetenv" || firstWord == "unsetenv" ||
@@ -569,12 +569,17 @@ KillCommand::KillCommand(const char *cmd_line, JobsList *jobs) : BuiltInCommand(
 void KillCommand::execute() {}
 
 AliasCommand::AliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCommand(cmd_line), shell(shell) {
-// if(arguments.size() > 2){
-//     cerr << "smash error: alias: invalid alias format" << endl;
-// }
-    if (arguments.size() == 1) {
-        return;
-    } else {
+    if (arguments.size() > 1) {
+        if (arguments[1] == ">" || arguments[1] == ">>") {
+            RedirectionCommand *new_redir_command = new RedirectionCommand(cmd_line, shell);
+            new_redir_command->execute();
+            return;
+        }
+        if (arguments[1] == "|" || arguments[1] == "|&") {
+            PipeCommand *new_pipe_command = new PipeCommand(cmd_line);
+            new_pipe_command->execute();
+            return;
+        }
         if (arguments.size() == 2) {
             name = arguments[1].substr(0, arguments[1].find_first_of("="));
             command = arguments[1].substr(arguments[1].find_first_of("=") + 2,
@@ -614,17 +619,11 @@ AliasCommand::AliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCom
                 return;
             }
         }
+        shell->getaliases()[name] = command;
+    } else {
 
-
-//     shell->getaliases()[name] = command;
-//     if(arguments.size() == 1){
-//         for(auto& e : shell->getaliases()){
-//             cout << e.first << "='" << e.second << "'" << endl;
-//         }
-//     }
+        //this is already in execut
     }
-
-    //this is already in execute
 }
 
 void AliasCommand::execute() {
@@ -632,9 +631,6 @@ void AliasCommand::execute() {
         for (auto &name: shell->getaliases()) {
             cout << name.first + "='" + name.second + "'" << endl;
         }
-    } else {
-//        shell->getaliases().insert({name, command});
-        shell->getaliases()[name] = command;
     }
 }
 
@@ -906,10 +902,12 @@ void WatchProcCommand::execute() {
     long process_time_2 = get_process_time();
     long system_time_2 = get_system_time();
 
+    long num_of_cores = sysconf(_SC_NPROCESSORS_ONLN);
+
     double cpu_usage = ((process_time_2 - process_time_1) / (system_time_2 - system_time_1)) * 100;
 
     cout << "CPU Usage: ";
-    cout << fixed << setprecision(1) << cpu_usage;
+    cout << fixed << setprecision(1) << cpu_usage / num_of_cores;
     cout << " % | ";
 
 
