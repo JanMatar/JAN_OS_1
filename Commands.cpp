@@ -886,6 +886,10 @@ long WatchProcCommand::get_memory_usage() {
     return memory_usage;
 }
 
+long WatchProcCommand::get_num_of_cores() {
+    return sysconf(_SC_NPROCESSORS_ONLN);
+}
+
 void WatchProcCommand::execute() {
 
     string path_1 = "/proc/" + this->pid + "/stat";
@@ -909,7 +913,7 @@ void WatchProcCommand::execute() {
     double cpu_usage = ((process_time_2 - process_time_1) / (system_time_2 - system_time_1)) * 100;
 
     cout << "CPU Usage: ";
-    cout << fixed << setprecision(1) << cpu_usage;
+    cout << fixed << setprecision(1) << (cpu_usage / get_num_of_cores());
     cout << " % | ";
 
 
