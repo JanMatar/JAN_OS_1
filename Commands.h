@@ -463,8 +463,6 @@ public:
     virtual ~WatchProcCommand() {
     }
 
-    long get_num_of_cores();
-
     long get_process_time();
 
     long get_system_time();
