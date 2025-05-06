@@ -907,9 +907,12 @@ void WatchProcCommand::execute() {
     long process_time_2 = get_process_time();
     long system_time_2 = get_system_time();
 
+    double delta_process_time = process_time_2 - process_time_1;
+    double delta_system_time = system_time_2 - system_time_1;
+
     long num_of_cores = sysconf(_SC_NPROCESSORS_ONLN);
 
-    double cpu_usage = ((process_time_2 - process_time_1) / (system_time_2 - system_time_1)) * 100;
+    double cpu_usage = (delta_process_time / delta_system_time) * 100;
 
     cout << "CPU Usage: ";
     cout << fixed << setprecision(1) << cpu_usage / num_of_cores;
