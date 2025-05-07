@@ -311,7 +311,7 @@ void ShowPidCommand::execute() {
 GetCurrentDirectory::GetCurrentDirectory(const char *cmd_line) : BuiltInCommand(cmd_line) {}
 
 void GetCurrentDirectory::execute() {
-    char cwd[BUFFER_SIZE];
+    char cwd[DATA_SIZE];
     if (getcwd(cwd, sizeof(cwd)) != nullptr) {
         string curr_dir(cwd);
         cout << "Current working directory: " << curr_dir << endl;
@@ -334,8 +334,8 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
         return;
     }
 
-    char *Path = new char[BUFFER_SIZE];
-    if (getcwd(Path, BUFFER_SIZE) == nullptr) {
+    char *Path = new char[DATA_SIZE];
+    if (getcwd(Path, DATA_SIZE) == nullptr) {
         perror("smash error: getcwd failed");
         delete[] Path;
         return;
@@ -627,6 +627,8 @@ AliasCommand::AliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCom
             }
         }
         shell->getaliases()[name] = command;
+        string toprint = name + "='" + command + "'";
+        shell->get_Aliasesforprinting().push_back(toprint);
     } else {
 
         //this is already in execut
@@ -635,8 +637,8 @@ AliasCommand::AliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCom
 
 void AliasCommand::execute() {
     if (this->arguments.size() == 1) {
-        for (auto &name: shell->getaliases()) {
-            cout << name.first + "='" + name.second + "'" << endl;
+        for (auto &name: shell->get_Aliasesforprinting()) {
+            cout << name << endl;
         }
     }
 }
@@ -650,6 +652,11 @@ UnAliasCommand::UnAliasCommand(const char *cmd_line, SmallShell *shell) : BuiltI
         if (shell->getaliases().erase(arguments[i]) == 0) {
             cerr << "smash error: unalias: " << string(arguments[i]) << " alias does not exist" << endl;
             return;
+        }
+        for(auto e = shell->get_Aliasesforprinting().begin(); e != shell->get_Aliasesforprinting().end(); ++e){
+            if(arguments[i] == (*e).substr(0, (*e).find_first_of("="))){
+                shell->get_Aliasesforprinting().erase(e);
+            }
         }
     }
 }
@@ -670,22 +677,22 @@ void UnSetEnvCommand::execute() {
         return;
     }
 
-    char buffer[2 * BUFFER_SIZE];
-    ssize_t read_bytes = read(fd, buffer, 2 * BUFFER_SIZE - 1);
+    char DATA[2 * DATA_SIZE];
+    ssize_t read_bytes = read(fd, DATA, 2 * DATA_SIZE - 1);
     close(fd);
     if (read_bytes < 0) {
         perror("smash error: read failed");
         return;
     }
-    buffer[2 * BUFFER_SIZE - 1] = '\0';
+    DATA[2 * DATA_SIZE - 1] = '\0';
 
     for (size_t a = 1; a < arguments.size(); a++) { // start from 1 to skip "unsetenv"
         const string &key = arguments[a];
         bool found = false;
 
         //here we go over all environments for each argument to be able to handle the error of the argument not existing
-        char *ptr = buffer;
-        while (ptr < buffer + read_bytes) {//while not in the end of the buffer
+        char *ptr = DATA;
+        while (ptr < DATA + read_bytes) {//while not in the end of the DATA
             string entry(ptr);
             size_t pos = entry.find('=');
             if (pos != string::npos) {
@@ -744,8 +751,8 @@ long WatchProcCommand::get_process_time() {
         return -1;
     }
 
-    char *buffer = new char[BUFFER_SIZE];
-    ssize_t read_bytes = read(fd, buffer, BUFFER_SIZE);
+    char *DATA = new char[DATA_SIZE];
+    ssize_t read_bytes = read(fd, DATA, DATA_SIZE);
 
     if (read_bytes == -1) {
         close(fd);
@@ -753,10 +760,10 @@ long WatchProcCommand::get_process_time() {
         return -1;
     }
 
-    buffer[BUFFER_SIZE - 1] = '\0';
-    close(fd); //date been put into buffer so can close file
+    DATA[DATA_SIZE - 1] = '\0';
+    close(fd); //date been put into DATA so can close file
 
-    char *start = strchr(buffer, ')'); //process name may have spaces
+    char *start = strchr(DATA, ')'); //process name may have spaces
     start++; //start from after the process name
 
     char *token = strtok(start, " ");
@@ -771,7 +778,7 @@ long WatchProcCommand::get_process_time() {
         field++;
     }
     long total_process_time = utime + stime;
-    delete[] buffer;
+    delete[] DATA;
     return total_process_time;
 }
 
@@ -784,22 +791,22 @@ long WatchProcCommand::get_system_time() {
         return -1;
     }
 
-    char *buffer = new char[BUFFER_SIZE];
-    ssize_t read_bytes = read(fd, buffer, BUFFER_SIZE);
+    char *DATA = new char[DATA_SIZE];
+    ssize_t read_bytes = read(fd, DATA, DATA_SIZE);
 
     if (read_bytes == -1) {
         close(fd);
-        delete[] buffer;
+        delete[] DATA;
         perror("smash error: watchproc: read failed");
         return -1;
     }
 
-    buffer[BUFFER_SIZE - 1] = '\n'; //null terminate the buffer
-    char *line = strtok(buffer, "\n"); //get the line that contains all cpu times (already summed)
+    DATA[DATA_SIZE - 1] = '\n'; //null terminate the DATA
+    char *line = strtok(DATA, "\n"); //get the line that contains all cpu times (already summed)
     long total_system_time = 0;
     while (line) { //loop to look for the line we need
         if (strncmp (line, "cpu ", 4) == 0) {
-            char *token = strtok(buffer, " ");
+            char *token = strtok(DATA, " ");
             int field = 0;
             while (token) {
                 if (field > 0) { // > 0 to skip the "cpu" field aka the name itself
@@ -812,7 +819,7 @@ long WatchProcCommand::get_system_time() {
             line = strtok(nullptr, "\n"); //incrementing the line
         }
     }
-    delete[] buffer;
+    delete[] DATA;
     close(fd);
     return total_system_time;
 }
@@ -826,19 +833,19 @@ long WatchProcCommand::get_memory_usage() {
         return -1;
     }
 
-    char *buffer = new char[BUFFER_SIZE];
-    ssize_t read_bytes = read(fd, buffer, BUFFER_SIZE);
+    char *DATA = new char[DATA_SIZE];
+    ssize_t read_bytes = read(fd, DATA, DATA_SIZE);
 
     if (read_bytes == -1) {
         close(fd);
-        delete[] buffer;
+        delete[] DATA;
         perror("smash error: watchproc: read failed");
         return -1;
     }
 
-    buffer[read_bytes] = '\0';
+    DATA[read_bytes] = '\0';
     long memory_usage = 0;
-    char *line = strtok(buffer, "\n");
+    char *line = strtok(DATA, "\n");
     while (line) {
         if (strncmp(line, "VmRSS:", 6) == 0) {
             memory_usage = atol(line + 7);
@@ -848,7 +855,7 @@ long WatchProcCommand::get_memory_usage() {
     }
 
     if (memory_usage == 0) {
-        line = strtok(buffer, "\n");
+        line = strtok(DATA, "\n");
         while (line) {
             if (strncmp(line, "VmSize:", 7) == 0) {
                 memory_usage = atol(line + 8);
@@ -857,7 +864,7 @@ long WatchProcCommand::get_memory_usage() {
             line = strtok(nullptr, "\n");
         }
     }
-    delete[] buffer;
+    delete[] DATA;
     close(fd);
     return memory_usage;
 }
@@ -980,17 +987,17 @@ void WhoAmICommand::execute() {
         return;
     }
 
-    char buffer[1024];
+    char DATA[1024];
     ssize_t bytesRead;
     bool found = false;
-    size_t bufferPos = 0;
+    size_t DATAPos = 0;
 
-    while (!found && (bytesRead = read(fd, buffer + bufferPos, sizeof(buffer) - bufferPos - 1)) > 0) {
+    while (!found && (bytesRead = read(fd, DATA + DATAPos, sizeof(DATA) - DATAPos - 1)) > 0) {
         // Ensure null-termination for string operations
-        buffer[bufferPos + bytesRead] = '\0';
-        char *line = buffer;
+        DATA[DATAPos + bytesRead] = '\0';
+        char *line = DATA;
 
-        // Process each complete line in buffer
+        // Process each complete line in DATA
         char *lineEnd;
         while ((lineEnd = strchr(line, '\n')) != nullptr) {
             *lineEnd = '\0'; // Null-terminate the line
@@ -1016,9 +1023,9 @@ void WhoAmICommand::execute() {
 
         // Handle remaining partial line (if any)
         if (!found) {
-            bufferPos = strlen(line);
-            if (bufferPos > 0) {
-                memmove(buffer, line, bufferPos);
+            DATAPos = strlen(line);
+            if (DATAPos > 0) {
+                memmove(DATA, line, DATAPos);
             }
         }
     }
@@ -1037,216 +1044,6 @@ void WhoAmICommand::execute() {
 }
 
 // Fetch IP address using low-level system calls
-static string fetchIpAddress(const string &networkInterface) {
-    struct ifaddrs *interfaceList = nullptr;
-    void *addressPointer = nullptr;
-
-    if (getifaddrs(&interfaceList) == -1) {
-        cerr << "smash error: netinfo: unable to get IP address for interface " << networkInterface << endl;
-        return "";
-    }
-
-    for (struct ifaddrs *currentInterface = interfaceList;
-         currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
-        if (currentInterface->ifa_addr->sa_family == AF_INET) {
-            if (networkInterface == currentInterface->ifa_name) {
-                addressPointer = &((struct sockaddr_in *) currentInterface->ifa_addr)->sin_addr;
-                char ipBuffer[INET_ADDRSTRLEN];
-                unsigned char *ip = (unsigned char *) &((struct sockaddr_in *) addressPointer)->sin_addr;
-                snprintf(ipBuffer, INET_ADDRSTRLEN, "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
-                freeifaddrs(interfaceList);
-                return string(ipBuffer);
-            }
-        }
-    }
-
-    freeifaddrs(interfaceList);
-    cerr << "smash error: netinfo: interface " << networkInterface << " does not have an IP address" << endl;
-    return "";
-}
-
-// Fetch subnet mask using low-level system calls
-static string fetchSubnetMask(const string &networkInterface) {
-    struct ifaddrs *interfaceList = nullptr;
-    void *addressPointer = nullptr;
-
-    if (getifaddrs(&interfaceList) == -1) {
-        cerr << "smash error: netinfo: unable to get subnet mask for interface " << networkInterface << endl;
-        return "";
-    }
-
-    for (struct ifaddrs *currentInterface = interfaceList;
-         currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
-        if (currentInterface->ifa_addr->sa_family == AF_INET) {
-            if (networkInterface == currentInterface->ifa_name) {
-                addressPointer = &((struct sockaddr_in *) currentInterface->ifa_netmask)->sin_addr;
-                char subnetBuffer[INET_ADDRSTRLEN];
-                unsigned char *subnet = (unsigned char *) &((struct sockaddr_in *) addressPointer)->sin_addr;
-                snprintf(subnetBuffer, INET_ADDRSTRLEN, "%u.%u.%u.%u", subnet[0], subnet[1], subnet[2], subnet[3]);
-                freeifaddrs(interfaceList);
-                return string(subnetBuffer);
-            }
-        }
-    }
-
-    freeifaddrs(interfaceList);
-    cerr << "smash error: netinfo: interface " << networkInterface << " does not have a subnet mask" << endl;
-    return "";
-}
-
-// Parse gateway information from /proc/net/route
-static string parseGatewayInfo(const string &networkInterface, char *lineContent) {
-    char *lineFields[16];
-
-    while (lineContent != NULL) {
-        int fieldCount = _parseCommandLine(lineContent, lineFields);
-
-        if (fieldCount < 3 || strcmp(lineFields[0], "Iface") == 0) {
-            lineContent = strtok(NULL, "\n");
-            continue;
-        }
-        if (networkInterface == lineFields[0]) {
-            if (strcmp(lineFields[1], "00000000") == 0) {
-                unsigned long gatewayAddress = strtoul(lineFields[2], nullptr, 16);
-                struct in_addr gatewayAddr;
-                gatewayAddr.s_addr = gatewayAddress;
-                char gatewayBuffer[INET_ADDRSTRLEN];
-                unsigned char *gateway = (unsigned char *) &gatewayAddr.s_addr;
-                snprintf(gatewayBuffer, INET_ADDRSTRLEN, "%u.%u.%u.%u", gateway[0], gateway[1], gateway[2], gateway[3]);
-                return string(gatewayBuffer);
-            }
-        }
-        lineContent = strtok(NULL, "\n");
-    }
-
-    return "";
-}
-
-// Fetch the default gateway from /proc/net/route
-static string fetchDefaultGateway(const string &networkInterface) {
-    int fileDesc = open("/proc/net/route", O_RDONLY);
-    if (fileDesc == -1) {
-        perror("smash error: netinfo");
-        return "";
-    }
-    char buffer[BUFFER_SIZE];
-    ssize_t bytesRead = read(fileDesc, buffer, sizeof(buffer) - 1);
-    if (bytesRead == -1) {
-        perror("smash error: netinfo");
-        close(fileDesc);
-        return "";
-    }
-    buffer[bytesRead] = '\0';
-    close(fileDesc);
-
-    char *lineContent = strtok(buffer, "\n");
-    return parseGatewayInfo(networkInterface, lineContent);
-}
-
-// Extract DNS server addresses from /etc/resolv.conf
-static vector<string> extractDnsServers(char *bufferContent) {
-    char *lineContent = strtok(bufferContent, "\n");
-    char *lineFields[16];
-    vector<string> dnsServers;
-
-    while (lineContent != NULL) {
-        int fieldCount = _parseCommandLine(lineContent, lineFields);
-        if (fieldCount < 2) {
-            lineContent = strtok(NULL, "\n");
-            continue;
-        }
-        if (strcmp(lineFields[0], "nameserver") == 0) {
-            dnsServers.push_back(string(lineFields[1]));
-        }
-        lineContent = strtok(NULL, "\n");
-    }
-    return dnsServers;
-}
-
-// Fetch DNS servers from /etc/resolv.conf
-static vector<string> fetchDnsServers() {
-    int fileDesc = open("/etc/resolv.conf", O_RDONLY);
-    vector<string> dnsServers;
-    if (fileDesc == -1) {
-        cerr << "smash error: netinfo: unable to open /etc/resolv.conf" << endl;
-        return dnsServers;
-    }
-    char buffer[BUFFER_SIZE];
-    ssize_t bytesRead = read(fileDesc, buffer, sizeof(buffer) - 1);
-    if (bytesRead == -1) {
-        perror("smash error: netinfo");
-        close(fileDesc);
-        return dnsServers;
-    }
-    buffer[bytesRead] = '\0';
-    close(fileDesc);
-
-    dnsServers = extractDnsServers(buffer);
-    return dnsServers;
-}
-
-// Constructor for NetInfo
-NetInfo::NetInfo(const char *cmd_line) : Command(cmd_line) {
-    interfaceFound = false;
-
-    if (_isBackgroundComamnd(cmd_line)) {
-        _removeBackgroundSign(cmd_line);
-    }
-
-    char *argumentsArray[COMMAND_MAX_ARGS];
-    _parseCommandLine(cmd_line, argumentsArray);
-
-    if (argumentsArray[1] == nullptr) {
-        cerr << "smash error: netinfo: no interface specified" << endl;
-        interfaceFound = false;
-        return;
-    }
-
-    string networkInterface = argumentsArray[1];
-
-    ipAddress = fetchIpAddress(networkInterface);
-    if (ipAddress.empty()) {
-        interfaceFound = false;
-        return;
-    }
-
-    subnetMask = fetchSubnetMask(networkInterface);
-    if (subnetMask.empty()) {
-        interfaceFound = false;
-        return;
-    }
-
-    defaultGateway = fetchDefaultGateway(networkInterface);
-    if (defaultGateway.empty()) {
-        interfaceFound = false;
-        return;
-    }
-
-    dnsServers = fetchDnsServers();
-    if (dnsServers.empty()) {
-        interfaceFound = false;
-        return;
-    }
-
-    interfaceFound = true;
-}
-
-// Execute the command and display network information
-void NetInfo::execute() {
-    if (interfaceFound) {
-        cout << "IP Address: " << ipAddress << endl;
-        cout << "Subnet Mask: " << subnetMask << endl;
-        cout << "Default Gateway: " << defaultGateway << endl;
-        cout << "DNS Servers: ";
-        for (size_t i = 0; i < dnsServers.size(); ++i) {
-            cout << dnsServers[i];
-            if (i != dnsServers.size() - 1) {
-                cout << ", ";
-            }
-        }
-        cout << endl;
-    }
-}
 
 
 PipeCommand::PipeCommand(const char *cmd_line) : Command(cmd_line) {}
@@ -1325,4 +1122,173 @@ void PipeCommand::execute() {
     close(fd[1]);
     waitpid(pid1, nullptr, 0);  // Wait for both child processes to finish
     waitpid(pid2, nullptr, 0);
+}
+
+
+
+static bool getSubnetmask(const string &interface, string &subnetMask) {
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        perror("smash error: socket failed");
+        return false;
+    }
+    //is socket allowed?
+
+    struct ifreq if_req;
+    memset(&if_req, 0, sizeof(if_req));
+    strncpy(if_req.ifr_name, interface.c_str(), IFNAMSIZ - 1);
+
+    //check if it fails
+    if (ioctl(sock, SIOCGIFNETMASK, &if_req) < 0) {
+        perror("smash error: ioctl failed");
+        close(sock);
+        return false;
+    }
+
+    subnetMask = inet_ntoa(((struct sockaddr_in*)&if_req.ifr_netmask)->sin_addr);
+    close(sock);
+    return true;
+}
+
+static bool getDnsServers(vector<string> &servers) {
+    int fd = open("/etc/resolv.conf", O_RDONLY);
+    if (fd < 0) {
+        perror("smash error: open failed");
+        return false;
+    }
+
+    //creating a DATA
+    char DATA[4096];
+    ssize_t bytes = read(fd, DATA, sizeof(DATA) - 1);
+    if (bytes < 0) {
+        perror("smash error: read failed");
+        close(fd);
+        return false;
+    }
+    DATA[bytes] = '\0';
+    close(fd);
+
+    char *line = strtok(DATA, "\n");
+    while (line) {
+        char *saveptr;
+        //using the thread safe strtok
+        char *type = strtok_r(line, " \t", &saveptr);
+        if (type && strcmp(type, "nameserver") == 0) {
+            char *server = strtok_r(NULL, " \t", &saveptr);
+            if (server) servers.push_back(server);
+        }
+        line = strtok(NULL, "\n");
+    }
+
+    return !servers.empty();
+}
+
+static bool getDefaultGateway(const string &interface, string &gateway) {
+    int fd = open("/proc/net/route", O_RDONLY);
+    if (fd < 0) {
+        perror("smash error: open failed");
+        return false;
+    }
+
+    char DATA[4096];
+    ssize_t bytes = read(fd, DATA, sizeof(DATA) - 1);
+    if (bytes < 0) {
+        perror("smash error: read failed");
+        close(fd);
+        return false;
+    }
+    DATA[bytes] = '\0';
+    close(fd);
+
+    char *line = strtok(DATA, "\n");
+    if (line) line = strtok(NULL, "\n"); // Skip header
+
+    while (line) {
+        char *saveptr;
+        char *iface = strtok_r(line, " \t", &saveptr);
+        if (iface && strcmp(iface, interface.c_str()) == 0) {
+            char *dest = strtok_r(NULL, " \t", &saveptr);
+            char *gw = strtok_r(NULL, " \t", &saveptr);
+            if (dest && gw && strcmp(dest, "00000000") == 0) {
+                unsigned long g = strtoul(gw, NULL, 16);
+                struct in_addr addr;
+                addr.s_addr = g;
+                gateway = inet_ntoa(addr);
+                return true;
+            }
+        }
+        line = strtok(NULL, "\n");
+    }
+
+    return false;
+}
+
+//getting ip address
+static bool getIpAddress(const string &interface, string &ipAddress) {
+    int sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock < 0) {
+        perror("smash error: socket failed");
+        return false;
+    }
+
+    //checking the ip and getting it
+    struct ifreq if_req;
+    memset(&if_req, 0, sizeof(if_req));
+    strncpy(if_req.ifr_name, interface.c_str(), IFNAMSIZ - 1);
+
+    if (ioctl(sock, SIOCGIFADDR, &if_req) < 0) {
+        perror("smash error: ioctl failed");
+        close(sock);
+        return false;
+    }
+
+    //dont forget to close
+    ipAddress = inet_ntoa(((struct sockaddr_in*)&if_req.ifr_addr)->sin_addr);
+    close(sock);
+    return true;
+}
+
+NetInfo::NetInfo(const char *cmd_line) : Command(cmd_line){
+    if (_isBackgroundComamnd(cmd_line)) {
+        _removeBackgroundSign((char *) cmd_line);
+    }
+
+    char *args[COMMAND_MAX_ARGS];
+    _parseCommandLine(cmd_line, args);
+    if (!args[1]) {
+        perror("smash error: netinfo");
+        return;
+    }
+
+    interface = args[1];
+    //check succes if no we go into the rabbit hole
+    bool success = getIpAddress(interface, ipAddress) &&
+                   getSubnetmask(interface, subnetMask) &&
+                   getDefaultGateway(interface, defaultGateway) &&
+                   getDnsServers(dnsServers);
+
+    if (!success) {
+        ipAddress.clear();
+        subnetMask.clear();
+        defaultGateway.clear();
+        dnsServers.clear();
+    }
+}
+
+void NetInfo::execute() {
+    //do we print lo?
+    if (ipAddress.empty() || interface == "lo") return;
+
+    cout << "IP Address: " << ipAddress << endl;
+    cout << "Subnet Mask: " << subnetMask << endl;
+    cout << "Default Gateway: " << defaultGateway << endl;
+
+    if (!dnsServers.empty()) {
+        cout << "DNS Servers: ";
+        for (size_t i = 0; i < dnsServers.size(); ++i) {
+            cout << dnsServers[i];
+            if (i != dnsServers.size() - 1) cout << ", ";
+        }
+        cout << endl;
+    }
 }
