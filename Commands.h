@@ -31,47 +31,6 @@
 #include <sys/types.h>
 #include <sys/syscall.h>  // Ensure this is included
 #include <sys/types.h>     // Required for directory entry structs
-#include <ifaddrs.h>
-#include <arpa/inet.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <string.h>
-#include <iostream>
-#include <vector>
-#include <fstream>
-#include <sstream>
-#include <sys/wait.h>
-#include <iomanip>
-#include <unistd.h>
-#include "Commands.h"
-#include <regex>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <pwd.h>
-#include <iomanip>
-#include <cstdlib>
-#include <sys/syscall.h>
-#include <ifaddrs.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <ifaddrs.h>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <cstring>
-#include <iostream>
-#include <vector>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#include <net/if.h>      // For ifreq and IFNAMSIZ
-#include <sys/ioctl.h>   // For ioctl()
-#include <sys/socket.h>  // For socket()
-#include <arpa/inet.h>   // For inet_ntoa()
-#include <string>        // For std::string
-#include <cstring>       // For strncpy()
-#include <iostream>      // For std::cerr and std::cout
 
 
 
@@ -80,7 +39,7 @@ using namespace std;
 
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
-#define DATA_SIZE (4096)
+#define BUFFER_SIZE (4096)
 
 class Command {
    string cmd_line;
@@ -159,7 +118,6 @@ private:
     char* Previous_Path;
     JobsList* Jobs;
     map<string, string> Aliases;
-    vector<string> Aliasesforprinting;
     pid_t currFgCmd = -1;
 
     SmallShell();
@@ -174,10 +132,6 @@ public:
         static SmallShell instance; // Guaranteed to be destroyed.
         // Instantiated on first use.
         return instance;
-    }
-
-    vector<string>& get_Aliasesforprinting(){
-        return Aliasesforprinting;
     }
 
     pid_t getcurrFgCmd() const {
@@ -231,7 +185,7 @@ class ExternalCommand : public Command {
     bool is_complex = false;
 
 public:
-    ExternalCommand(const char *cmd_line, JobsList *jobsList);
+    ExternalCommand(const char *cmd_line, JobsList *jobsList, string original_cmd_line);
 
     virtual ~ExternalCommand() {
     }
@@ -355,17 +309,17 @@ public:
     void execute() override;
 };
 
-
-// NetInfo Class Definition
 class NetInfo : public Command {
-    string ipAddress;
-    string subnetMask;
-    string defaultGateway;
-    vector<string> dnsServers;
-    string interface;
-
+    bool interfaceFound;  // A flag to check if the network information was successfully retrieved
+    string ipAddress;     // To store the IP address of the interface
+    string subnetMask;    // To store the subnet mask of the interface
+    string defaultGateway; // To store the default gateway
+    vector<string> dnsServers; // To store the list of DNS servers
 public:
     NetInfo(const char *cmd_line);
+
+    virtual ~NetInfo() {
+    }
 
     void execute() override;
 };
@@ -517,8 +471,5 @@ public:
 
     void execute() override;
 };
-
-
-
 
 #endif //SMASH_COMMAND_H_
