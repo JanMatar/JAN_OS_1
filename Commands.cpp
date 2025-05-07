@@ -788,23 +788,24 @@ long WatchProcCommand::get_process_time() {
     }
 
     buffer[BUFFER_SIZE - 1] = '\0';
+    close(fd); //date been put into buffer so can close file
 
-    char *token = strtok(buffer, " ");
-    //for skipping unwanted data
-    for (int i = 0; i < 13; i++) token = strtok(nullptr, " ");
+    char *start = strchr(buffer, ')' ); //process name may have spaces
+    start++; //start from after the process name
 
+    char *token = strtok(start, " ");
+
+    int field = 3; //starting after the pid and process name
     long utime = 0, stime = 0;
 
-    if (token != nullptr) {
-        utime = atol(token);
+    while (token && field <= 15){
+        if (field == 14) utime = atol(token);
+        if (field == 15) stime = atol(token);
         token = strtok(nullptr, " ");
-    }
-    if (token != nullptr) {
-        stime = atol(token);
+        field++;
     }
     long total_process_time = utime + stime;
     delete[] buffer;
-    close(fd);
     return total_process_time;
 }
 
@@ -910,18 +911,18 @@ void WatchProcCommand::execute() {
     double delta_process_time = process_time_2 - process_time_1;
     double delta_system_time = system_time_2 - system_time_1;
 
-    long num_of_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    double num_of_cores = sysconf(_SC_NPROCESSORS_ONLN);
 
     double cpu_usage = (delta_process_time / delta_system_time) * 100;
 
     cout << "CPU Usage: ";
-    cout << fixed << setprecision(1) << cpu_usage / num_of_cores;
+    cout << fixed << setprecision(1) << (cpu_usage / num_of_cores);
     cout << " % | ";
 
 
     long mem_value = get_memory_usage();
 
-    double mem_usage_in_mb = mem_value / 1024;
+    double mem_usage_in_mb = (double)mem_value / 1024;
     cout << "Memory Usage: ";
     cout << fixed << setprecision(1) << mem_usage_in_mb;
     cout << " MB" << endl;
