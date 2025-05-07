@@ -777,6 +777,7 @@ long WatchProcCommand::get_process_time() {
     int fd = open(path.c_str(), O_RDONLY);
     if (fd == -1) {
         perror("smash error: open failed");
+        return -1;
     }
 
     char *buffer = new char[BUFFER_SIZE];
@@ -785,12 +786,13 @@ long WatchProcCommand::get_process_time() {
     if (read_bytes == -1) {
         close(fd);
         perror("smash error: read failed");
+        return -1;
     }
 
     buffer[BUFFER_SIZE - 1] = '\0';
     close(fd); //date been put into buffer so can close file
 
-    char *start = strchr(buffer, ')' ); //process name may have spaces
+    char *start = strchr(buffer, ')'); //process name may have spaces
     start++; //start from after the process name
 
     char *token = strtok(start, " ");
@@ -798,7 +800,7 @@ long WatchProcCommand::get_process_time() {
     int field = 3; //starting after the pid and process name
     long utime = 0, stime = 0;
 
-    while (token && field <= 15){
+    while (token && field <= 15) {
         if (field == 14) utime = atol(token);
         if (field == 15) stime = atol(token);
         token = strtok(nullptr, " ");
@@ -810,11 +812,12 @@ long WatchProcCommand::get_process_time() {
 }
 
 long WatchProcCommand::get_system_time() {
-    string path = "/proc/" + this->pid + "/stat";
+    string path = "/proc/stat";
 
     int fd = open(path.c_str(), O_RDONLY);
     if (fd == -1) {
         perror("smash error: open failed");
+        return -1;
     }
 
     char *buffer = new char[BUFFER_SIZE];
@@ -824,20 +827,25 @@ long WatchProcCommand::get_system_time() {
         close(fd);
         delete[] buffer;
         perror("smash error: read failed");
+        return -1;
     }
 
-    buffer[BUFFER_SIZE - 1] = '\n';
-    char *line = strtok(buffer, "\n");
+    buffer[BUFFER_SIZE - 1] = '\n'; //null terminate the buffer
+    char *line = strtok(buffer, "\n"); //get the line that contains all cpu times (already summed)
     long total_system_time = 0;
-    if (line) {
-        char *token = strtok(buffer, " ");
-        int field = 0;
-        while (token) {
-            if (field > 0) {
-                total_system_time += atol(token);
+    while (line) { //loop to look for the line we need
+        if (strncmp (line, "cpu ", 4) == 0) {
+            char *token = strtok(buffer, " ");
+            int field = 0;
+            while (token) {
+                if (field > 0) { // > 0 to skip the "cpu" field aka the name itself
+                    total_system_time += atol(token); // summing the fields
+                }
+                field++;
+                token = strtok(nullptr, " ");
             }
-            field++;
-            token = strtok(nullptr, " ");
+        } else {
+            line = strtok(nullptr, "\n"); //incrementing the line
         }
     }
     delete[] buffer;
@@ -851,6 +859,7 @@ long WatchProcCommand::get_memory_usage() {
     int fd = open(path.c_str(), O_RDONLY);
     if (fd == -1) {
         perror("smash error: open failed");
+        return -1;
     }
 
     char *buffer = new char[BUFFER_SIZE];
@@ -860,9 +869,10 @@ long WatchProcCommand::get_memory_usage() {
         close(fd);
         delete[] buffer;
         perror("smash error: read failed");
+        return -1;
     }
 
-    buffer[BUFFER_SIZE - 1] = '\0';
+    buffer[read_bytes] = '\0';
     long memory_usage = 0;
     char *line = strtok(buffer, "\n");
     while (line) {
@@ -916,13 +926,13 @@ void WatchProcCommand::execute() {
     double cpu_usage = (delta_process_time / delta_system_time) * 100;
 
     cout << "CPU Usage: ";
-    cout << fixed << setprecision(1) << (cpu_usage / num_of_cores);
+    cout << fixed << setprecision(1) << (cpu_usage);
     cout << " % | ";
 
 
     long mem_value = get_memory_usage();
 
-    double mem_usage_in_mb = (double)mem_value / 1024;
+    double mem_usage_in_mb = (double) mem_value / 1024;
     cout << "Memory Usage: ";
     cout << fixed << setprecision(1) << mem_usage_in_mb;
     cout << " MB" << endl;
@@ -1070,12 +1080,13 @@ static string fetchIpAddress(const string &networkInterface) {
         return "";
     }
 
-    for (struct ifaddrs *currentInterface = interfaceList; currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
+    for (struct ifaddrs *currentInterface = interfaceList;
+         currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
         if (currentInterface->ifa_addr->sa_family == AF_INET) {
             if (networkInterface == currentInterface->ifa_name) {
-                addressPointer = &((struct sockaddr_in *)currentInterface->ifa_addr)->sin_addr;
+                addressPointer = &((struct sockaddr_in *) currentInterface->ifa_addr)->sin_addr;
                 char ipBuffer[INET_ADDRSTRLEN];
-                unsigned char *ip = (unsigned char *)&((struct sockaddr_in *)addressPointer)->sin_addr;
+                unsigned char *ip = (unsigned char *) &((struct sockaddr_in *) addressPointer)->sin_addr;
                 snprintf(ipBuffer, INET_ADDRSTRLEN, "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
                 freeifaddrs(interfaceList);
                 return string(ipBuffer);
@@ -1098,12 +1109,13 @@ static string fetchSubnetMask(const string &networkInterface) {
         return "";
     }
 
-    for (struct ifaddrs *currentInterface = interfaceList; currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
+    for (struct ifaddrs *currentInterface = interfaceList;
+         currentInterface != nullptr; currentInterface = currentInterface->ifa_next) {
         if (currentInterface->ifa_addr->sa_family == AF_INET) {
             if (networkInterface == currentInterface->ifa_name) {
-                addressPointer = &((struct sockaddr_in *)currentInterface->ifa_netmask)->sin_addr;
+                addressPointer = &((struct sockaddr_in *) currentInterface->ifa_netmask)->sin_addr;
                 char subnetBuffer[INET_ADDRSTRLEN];
-                unsigned char *subnet = (unsigned char *)&((struct sockaddr_in *)addressPointer)->sin_addr;
+                unsigned char *subnet = (unsigned char *) &((struct sockaddr_in *) addressPointer)->sin_addr;
                 snprintf(subnetBuffer, INET_ADDRSTRLEN, "%u.%u.%u.%u", subnet[0], subnet[1], subnet[2], subnet[3]);
                 freeifaddrs(interfaceList);
                 return string(subnetBuffer);
@@ -1133,7 +1145,7 @@ static string parseGatewayInfo(const string &networkInterface, char *lineContent
                 struct in_addr gatewayAddr;
                 gatewayAddr.s_addr = gatewayAddress;
                 char gatewayBuffer[INET_ADDRSTRLEN];
-                unsigned char *gateway = (unsigned char *)&gatewayAddr.s_addr;
+                unsigned char *gateway = (unsigned char *) &gatewayAddr.s_addr;
                 snprintf(gatewayBuffer, INET_ADDRSTRLEN, "%u.%u.%u.%u", gateway[0], gateway[1], gateway[2], gateway[3]);
                 return string(gatewayBuffer);
             }
