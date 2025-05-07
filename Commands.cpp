@@ -88,7 +88,7 @@ void _removeBackgroundSign(const char *cmd_line) { //TODO revert to normal if no
     const_cast<char *> (cmd_line)[str.find_last_not_of(WHITESPACE, idx) + 1] = 0;
 }
 
-static const char *removeBackgroundAndCopy(const char *cmd_line) { // TODO need to free the duplicate in the destructor
+static const char *removeBackgroundAndCopy(const char *cmd_line) {
     std::string cleaned(cmd_line);
     size_t bg_pos = cleaned.find('&');
     if (bg_pos != std::string::npos) {
@@ -132,6 +132,13 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     string first_of_command_alias = command_alias.substr(0, command_alias.find_first_of(" \n"));
     if (cleaned_cmd_for_built_in == "alias" || firstWord == "alias" || first_of_command_alias == "alias") {
         return new AliasCommand(command_alias.c_str(), this);
+    } else if (cleaned_cmd_for_built_in == "chprompt" || firstWord == "chprompt" ||
+               first_of_command_alias == "chprompt") {
+        return new ChangePromptCommand(command_alias.c_str(), this);
+    } if (cleaned_cmd_for_built_in == "cd" || firstWord == "cd" || first_of_command_alias == "cd") {
+        return new ChangeDirectoryCommand(command_alias.c_str(), this);
+    } if (cleaned_cmd_for_built_in == "unalias" || firstWord == "unalias" || first_of_command_alias == "unalias") {
+        return new UnAliasCommand(command_alias.c_str(), this);
     } else if (cmd_s.find(">") != string::npos || cmd_s.find(">>") != string::npos) {
         return new RedirectionCommand(cmd_line, this);
     } else if (cmd_s.find("|&") != string::npos || cmd_s.find("|") != string::npos) {
@@ -142,11 +149,6 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new GetCurrentDirectory(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "showpid" || firstWord == "showpid" || first_of_command_alias == "showpid") {
         return new ShowPidCommand(command_alias.c_str());
-    } else if (cleaned_cmd_for_built_in == "chprompt" || firstWord == "chprompt" ||
-               first_of_command_alias == "chprompt") {
-        return new ChangePromptCommand(command_alias.c_str(), this);
-    } else if (cleaned_cmd_for_built_in == "cd" || firstWord == "cd" || first_of_command_alias == "cd") {
-        return new ChangeDirectoryCommand(command_alias.c_str(), this);
     } else if (cleaned_cmd_for_built_in == "jobs" || firstWord == "jobs" || first_of_command_alias == "jobs") {
         return new JobsCommand(command_alias.c_str(), Jobs);
     } else if (cleaned_cmd_for_built_in == "fg" || firstWord == "fg" || first_of_command_alias == "fg") {
@@ -157,11 +159,6 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new KillCommand(command_alias.c_str(), Jobs);
     } else if (cleaned_cmd_for_built_in == "du" || firstWord == "du" || first_of_command_alias == "du") {
         return new DiskUsageCommand(command_alias.c_str());
-    } else if (cleaned_cmd_for_built_in == "unalias" || firstWord == "unalias" || first_of_command_alias == "unalias") {
-        return new UnAliasCommand(command_alias.c_str(), this);
-    } else if (cleaned_cmd_for_built_in == "unsetenv" || firstWord == "unsetenv" ||
-               first_of_command_alias == "unsetenv") {
-        return new UnSetEnvCommand(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "watchproc" || firstWord == "watchproc" ||
                first_of_command_alias == "watchproc") {
         return new WatchProcCommand(command_alias.c_str());
@@ -205,16 +202,9 @@ ExternalCommand::ExternalCommand(const char *cmd_line, JobsList *jobsList) :
         is_complex(isCommandComplex()),
         is_background(_isBackgroundComamnd(cmd_line)),
         jobs_list(jobsList) {
-    //also using the base class's constructor
-//    if (isCommandComplex()) {
-//        is_complex = true;
-//    }
-//    if (_isBackgroundComamnd(cmd_line)) {
-//        is_background = true;
-//    }
 }
 
-void ExternalCommand::execute() { //TODO test extensively, also some code duplication
+void ExternalCommand::execute() {
     if (!is_complex) {
         pid_t pid = fork();
         if (pid == -1) {
@@ -241,10 +231,11 @@ void ExternalCommand::execute() { //TODO test extensively, also some code duplic
         } else { //father
             if (isCommandBackground()) {
                 jobs_list->addJob(pid, this);
-            } else { //TODO may need to add foreground pid for signal handling
+            } else {
                 SmallShell::getInstance().setcurrFgCmd(pid);
                 if (waitpid(pid, nullptr, 0) == -1) {
                     perror("smash error: waitpid failed");
+                    return;
                 }
                 SmallShell::getInstance().setcurrFgCmd(-1);
             }
@@ -270,9 +261,10 @@ void ExternalCommand::execute() { //TODO test extensively, also some code duplic
         } else { //father
             if (isCommandBackground()) {
                 jobs_list->addJob(pid, this);
-            } else { //TODO may need to add foreground pid for signal handling
+            } else {
                 if (waitpid(pid, nullptr, 0) == -1) {
                     perror("smash error: waitpid failed");
+                    return;
                 }
             }
         }
@@ -325,6 +317,7 @@ void GetCurrentDirectory::execute() {
         cout << "Current working directory: " << curr_dir << endl;
     } else {
         perror("smash error: getcwd failed");
+        return;
     }
 }
 
@@ -353,6 +346,7 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
         string parent_path = string_path.substr(0, string_path.find_last_of("/"));
         if (chdir(parent_path.c_str()) == -1) {
             perror("smash error: chdir failed");
+            return;
         } else {
             shell->SetPreviousPath(Path); //this is to use the string as a char*
         }
@@ -362,6 +356,7 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
                 char *temp = shell->GetPreviousPath();
                 if (chdir(temp) == -1) {
                     perror("smash error: chdir failed");
+                    return;
                 } else {
                     shell->SetPreviousPath(Path);
                 }
@@ -370,6 +365,7 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
             string temp = arguments[1];
             if (chdir(temp.c_str()) == -1) {
                 perror("smash error: chdir failed");
+                return;
             } else {
                 shell->SetPreviousPath(Path);
             }
@@ -479,11 +475,12 @@ JobsCommand::JobsCommand(const char *cmd_line, JobsList *Jobs) : BuiltInCommand(
 void JobsCommand::execute() { m_JobsList->printJobsList(); }
 
 fgCommand::fgCommand(const char *cmd_line, JobsList *Jobs) : BuiltInCommand(cmd_line),
-                                                             Jobs(Jobs) { //TODO may need to try and catch
+                                                             Jobs(Jobs) {
     JobId = 0;
     if (arguments.size() <= 2) {
         if (arguments.size() == 1 && Jobs->getNumOfJobs() == 0) {
             cerr << "smash error: fg: jobs list is empty";
+            return;
         } else if (arguments.size() == 1) {
             pid = Jobs->getJobById(Jobs->getMaxId())->pid;
             JobId = Jobs->getMaxId();
@@ -498,6 +495,7 @@ fgCommand::fgCommand(const char *cmd_line, JobsList *Jobs) : BuiltInCommand(cmd_
                 pid = temp->pid;
             } else {
                 cerr << "smash error: fg: job-id" << JobId << "does not exist";
+                return;
             }
 
         }
@@ -506,7 +504,7 @@ fgCommand::fgCommand(const char *cmd_line, JobsList *Jobs) : BuiltInCommand(cmd_
     }
 }
 
-void fgCommand::execute() { //TODO also may need fgPid for signal handling
+void fgCommand::execute() {
     if (pid == 0) {
         return;
     }
@@ -575,6 +573,8 @@ void KillCommand::execute() {}
 
 AliasCommand::AliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCommand(cmd_line), shell(shell) {
     if (arguments.size() > 1) {
+
+        //next two if statements are for checking if the alias is in a redirection or pipe command
         if (arguments[1] == ">" || arguments[1] == ">>") {
             RedirectionCommand *new_redir_command = new RedirectionCommand(cmd_line, shell);
             new_redir_command->execute();
@@ -585,15 +585,17 @@ AliasCommand::AliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCom
             new_pipe_command->execute();
             return;
         }
+
+        //normal alias command
         if (arguments.size() == 2) {
             name = arguments[1].substr(0, arguments[1].find_first_of("="));
             command = arguments[1].substr(arguments[1].find_first_of("=") + 2,
                                           arguments[1].size() - arguments[1].find_first_of("=") - 3);
         } else {
-            //this is for when the command has multiple arguments
+            //this is for when the command (right of =) has multiple arguments
             name = arguments[1].substr(0, arguments[1].find_first_of("="));
 
-            //this is to take the command without the apostrophe in the first argument
+            //this is to take the command (right of =) without the apostrophe in the first argument
             command = arguments[1].substr(arguments[1].find_first_of("=") + 2,
                                           arguments[1].size() - 1);
 
@@ -602,7 +604,7 @@ AliasCommand::AliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCom
                 command += " " + arguments[i];
             }
 
-            //taking the last argument from the command without the apostrophe
+            //taking the last argument from the command (right of =) without the apostrophe
             command += " " + arguments[arguments.size() - 1].substr(0, findEndOfAlias());
         }
         string cmdl = string(cmd_line);
@@ -642,6 +644,7 @@ void AliasCommand::execute() {
 UnAliasCommand::UnAliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCommand(cmd_line), shell(shell) {
     if (arguments.size() == 1) {
         cerr << "smash error: unalias: not enough arguments" << endl;
+        return;
     }
     for (unsigned int i = 1; i < arguments.size(); i++) {
         if (shell->getaliases().erase(arguments[i]) == 0) {
@@ -656,60 +659,11 @@ UnSetEnvCommand::UnSetEnvCommand(const char *cmd_line) : BuiltInCommand(cmd_line
 }
 
 void UnSetEnvCommand::execute() {
-//    if (arguments.size() == 1){
-//        perror("smash error: unsetenv: not enough arguments");
-//        return;
-//    }
-//    string path = "/proc/self/environ";
-//    int fd = open(path.c_str(), O_RDONLY);
-//    if (fd == -1) {
-//        perror("smash error: open failed");
-//        return;
-//    }
-//
-//    char buffer[2 * BUFFER_SIZE];
-//    ssize_t read_bytes = read(fd, buffer, 2 * BUFFER_SIZE - 1);
-//    close(fd);
-//    if (read_bytes < 0) {
-//        perror("smash error: read failed");
-//        return;
-//    }
-//    buffer[2 * BUFFER_SIZE - 1] = '\0';
-//
-//    char* ptr = buffer;
-//    int environ_index = 0;
-//
-//    while (*ptr != '\0') {
-//        size_t size = strlen(ptr);
-//        bool removing = false;
-//
-//        for (auto &arg : arguments) {
-//            if (arg == "unsetenv") continue;
-//            string name = string(ptr).substr(0, string(ptr).find_first_of("="));
-//            if (name == arg) {
-//                removing = true;
-//                break;
-//            }
-//        }
-//
-//        if (removing) {
-//            int j = environ_index;
-//            while (environ[j]) {
-//                environ[j] = environ[j + 1];
-//                j++;
-//            }
-//        } else {
-//            ptr += size + 1;
-//            environ_index++;
-//        }
-//
-//    }
-
     if (arguments.size() == 1) {
         perror("smash error: unsetenv: not enough arguments");
         return;
     }
-    string path = "/proc/self/environ"; //may need to use the pid instead of self
+    string path = "/proc/self/environ";
     int fd = open(path.c_str(), O_RDONLY);
     if (fd == -1) {
         perror("smash error: open failed");
@@ -767,7 +721,17 @@ void UnSetEnvCommand::execute() {
 }
 
 
-WatchProcCommand::WatchProcCommand(const char *cmd_line) : BuiltInCommand(cmd_line), pid(arguments[1]) {
+WatchProcCommand::WatchProcCommand(const char *cmd_line) : BuiltInCommand(cmd_line) {
+    if (arguments.size() != 2){
+        cerr << "smash error: watchproc: invalid arguments" << endl;
+        return;
+    }
+    try {
+        pid = stoi(arguments[1]);
+    } catch (...) {
+        cerr << "smash error: watchproc: invalid arguments" << endl;
+        return;
+    }
 }
 
 long WatchProcCommand::get_process_time() {
@@ -776,7 +740,7 @@ long WatchProcCommand::get_process_time() {
 
     int fd = open(path.c_str(), O_RDONLY);
     if (fd == -1) {
-        perror("smash error: open failed");
+        perror("smash error: watchproc: open failed");
         return -1;
     }
 
@@ -785,7 +749,7 @@ long WatchProcCommand::get_process_time() {
 
     if (read_bytes == -1) {
         close(fd);
-        perror("smash error: read failed");
+        perror("smash error: watchproc: read failed");
         return -1;
     }
 
@@ -816,7 +780,7 @@ long WatchProcCommand::get_system_time() {
 
     int fd = open(path.c_str(), O_RDONLY);
     if (fd == -1) {
-        perror("smash error: open failed");
+        perror("smash error: watchproc: open failed");
         return -1;
     }
 
@@ -826,7 +790,7 @@ long WatchProcCommand::get_system_time() {
     if (read_bytes == -1) {
         close(fd);
         delete[] buffer;
-        perror("smash error: read failed");
+        perror("smash error: watchproc: read failed");
         return -1;
     }
 
@@ -858,7 +822,7 @@ long WatchProcCommand::get_memory_usage() {
 
     int fd = open(path.c_str(), O_RDONLY);
     if (fd == -1) {
-        perror("smash error: open failed");
+        perror("smash error: watchproc: open failed");
         return -1;
     }
 
@@ -868,7 +832,7 @@ long WatchProcCommand::get_memory_usage() {
     if (read_bytes == -1) {
         close(fd);
         delete[] buffer;
-        perror("smash error: read failed");
+        perror("smash error: watchproc: read failed");
         return -1;
     }
 
@@ -927,7 +891,7 @@ void WatchProcCommand::execute() {
 
     cout << "CPU Usage: ";
     cout << fixed << setprecision(1) << (cpu_usage);
-    cout << " % | ";
+    cout << "% | ";
 
 
     long mem_value = get_memory_usage();
@@ -960,7 +924,7 @@ RedirectionCommand::RedirectionCommand(const char *cmd_line, SmallShell *shell) 
     command = shell->CreateCommand(left_side_command.c_str());
 }
 
-void RedirectionCommand::execute() { //TODO needs more testing
+void RedirectionCommand::execute() {
     pid_t pid = fork();
     if (pid == -1) {
         perror("smash error: fork failed");
@@ -975,17 +939,19 @@ void RedirectionCommand::execute() { //TODO needs more testing
         }
         if (fd == -1) {
             perror("smash error: open failed");
+            return;
         }
         command->execute();
         exit(0);
     } else {
         if (waitpid(pid, nullptr, 0) == -1) {
             perror("smash error: waitpid failed");
+            return;
         }
     }
 }
 
-DiskUsageCommand::DiskUsageCommand(const char *cmd_line) : Command(cmd_line) {//TODO ask around how people did this
+DiskUsageCommand::DiskUsageCommand(const char *cmd_line) : Command(cmd_line) {
 }
 
 void DiskUsageCommand::execute() {
