@@ -80,7 +80,7 @@ using namespace std;
 
 #define COMMAND_MAX_LENGTH (200)
 #define COMMAND_MAX_ARGS (20)
-#define DATA_SIZE (4096)
+#define BUFFER_SIZE (4096)
 
 class Command {
    string cmd_line;
@@ -176,12 +176,12 @@ public:
         return instance;
     }
 
-    vector<string>& get_Aliasesforprinting(){
-        return Aliasesforprinting;
-    }
-
     pid_t getcurrFgCmd() const {
         return currFgCmd;
+    }
+
+    vector<string>& get_Aliasesforprinting(){
+        return Aliasesforprinting;
     }
 
     void setcurrFgCmd(pid_t newpid) {
@@ -231,7 +231,7 @@ class ExternalCommand : public Command {
     bool is_complex = false;
 
 public:
-    ExternalCommand(const char *cmd_line, JobsList *jobsList);
+    ExternalCommand(const char *cmd_line, JobsList *jobsList, string original_cmd_line);
 
     virtual ~ExternalCommand() {
     }
@@ -355,8 +355,6 @@ public:
     void execute() override;
 };
 
-
-// NetInfo Class Definition
 class NetInfo : public Command {
     string ipAddress;
     string subnetMask;
@@ -399,7 +397,7 @@ public:
     virtual ~ShowPidCommand(){}
 
     void execute() override;
-
+    
 };
 
 class ChangeDirectoryCommand : public BuiltInCommand {
@@ -517,8 +515,5 @@ public:
 
     void execute() override;
 };
-
-
-
 
 #endif //SMASH_COMMAND_H_

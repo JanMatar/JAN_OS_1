@@ -21,6 +21,7 @@
 #include <netinet/in.h>
 
 
+
 using namespace std;
 
 const std::string WHITESPACE = " \n\r\t\f\v";
@@ -122,11 +123,18 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     string cleaned_cmd_for_built_in = cmd_s.substr(0, cmd_s.find_first_of('&'));
 
     //checking aliases starts here
-    string command_alias = cmd_line;
+    string alias_replacement = cmd_line;
     if (!getaliases().empty()) {
         if (getaliases().find(firstWord) != getaliases().end()) {
-            command_alias = getaliases()[firstWord];
+            alias_replacement = getaliases()[firstWord];
         }
+    }
+
+    string command_alias = cmd_line;
+    if (alias_replacement != cmd_line) {
+        command_alias = cmd_s.substr(0, cmd_s.find_first_of(firstWord));
+        command_alias += alias_replacement;
+        command_alias += cmd_s.substr(cmd_s.find_first_of(firstWord) + firstWord.length(), cmd_s.length());
     }
 
     string first_of_command_alias = command_alias.substr(0, command_alias.find_first_of(" \n"));
@@ -141,8 +149,14 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
         return new UnAliasCommand(command_alias.c_str(), this);
     } else if (cmd_s.find(">") != string::npos || cmd_s.find(">>") != string::npos) {
         return new RedirectionCommand(cmd_line, this);
+    } else if (command_alias.find(">") != string::npos || command_alias.find(">>") != string::npos) {
+        return new RedirectionCommand(command_alias.c_str(), this);
     } else if (cmd_s.find("|&") != string::npos || cmd_s.find("|") != string::npos) {
         return new PipeCommand(cmd_line);
+    } if (command_alias.find(">") != string::npos || command_alias.find(">>") != string::npos) {
+        return new RedirectionCommand(command_alias.c_str(), this);
+    } if (command_alias.find("|") != string::npos || command_alias.find("|&") != string::npos) {
+        return new PipeCommand(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "netinfo" || firstWord == "netinfo" || first_of_command_alias == "netinfo") {
         return new NetInfo(command_alias.c_str());
     } else if (cleaned_cmd_for_built_in == "pwd" || firstWord == "pwd" || first_of_command_alias == "pwd") {
@@ -165,7 +179,7 @@ Command *SmallShell::CreateCommand(const char *cmd_line) {
     } else if (cleaned_cmd_for_built_in == "whoami" || firstWord == "whoami" || first_of_command_alias == "whoami") {
         return new WhoAmICommand(command_alias.c_str());
     } else if (!firstWord.empty()) { ///external command
-        return new ExternalCommand(command_alias.c_str(), Jobs);
+        return new ExternalCommand(command_alias.c_str(), Jobs, cmd_s);
     }
 
     return nullptr;
@@ -196,9 +210,9 @@ Command::Command(const char *cmd_line) : cmd_line(cmd_line), arguments() {
 Command::~Command() {}
 
 
-ExternalCommand::ExternalCommand(const char *cmd_line, JobsList *jobsList) :
+ExternalCommand::ExternalCommand(const char *cmd_line, JobsList *jobsList, string original_cmd_line) :
         Command(removeBackgroundAndCopy(cmd_line)),
-        original_cmd_line(cmd_line),
+        original_cmd_line(original_cmd_line),
         is_complex(isCommandComplex()),
         is_background(_isBackgroundComamnd(cmd_line)),
         jobs_list(jobsList) {
@@ -311,7 +325,7 @@ void ShowPidCommand::execute() {
 GetCurrentDirectory::GetCurrentDirectory(const char *cmd_line) : BuiltInCommand(cmd_line) {}
 
 void GetCurrentDirectory::execute() {
-    char cwd[DATA_SIZE];
+    char cwd[BUFFER_SIZE];
     if (getcwd(cwd, sizeof(cwd)) != nullptr) {
         string curr_dir(cwd);
         cout << "Current working directory: " << curr_dir << endl;
@@ -334,8 +348,8 @@ ChangeDirectoryCommand::ChangeDirectoryCommand(const char *cmd_line, SmallShell 
         return;
     }
 
-    char *Path = new char[DATA_SIZE];
-    if (getcwd(Path, DATA_SIZE) == nullptr) {
+    char *Path = new char[BUFFER_SIZE];
+    if (getcwd(Path, BUFFER_SIZE) == nullptr) {
         perror("smash error: getcwd failed");
         delete[] Path;
         return;
@@ -575,12 +589,12 @@ AliasCommand::AliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCom
     if (arguments.size() > 1) {
 
         //next two if statements are for checking if the alias is in a redirection or pipe command
-        if (arguments[1] == ">" || arguments[1] == ">>") {
+        if (arguments[1] == ">" || arguments[1] == ">>" || (arguments.size() >= 3 && (arguments[2] == ">" || arguments[2] == ">>"))) {
             RedirectionCommand *new_redir_command = new RedirectionCommand(cmd_line, shell);
             new_redir_command->execute();
             return;
         }
-        if (arguments[1] == "|" || arguments[1] == "|&") {
+        if (arguments[1] == "|" || arguments[1] == "|&" || (arguments.size() >= 3 && (arguments[2] == "|" || arguments[2] == "|&"))) {
             PipeCommand *new_pipe_command = new PipeCommand(cmd_line);
             new_pipe_command->execute();
             return;
@@ -631,7 +645,6 @@ AliasCommand::AliasCommand(const char *cmd_line, SmallShell *shell) : BuiltInCom
         shell->get_Aliasesforprinting().push_back(toprint);
     } else {
 
-        //this is already in execut
     }
 }
 
@@ -677,22 +690,22 @@ void UnSetEnvCommand::execute() {
         return;
     }
 
-    char DATA[2 * DATA_SIZE];
-    ssize_t read_bytes = read(fd, DATA, 2 * DATA_SIZE - 1);
+    char buffer[2 * BUFFER_SIZE];
+    ssize_t read_bytes = read(fd, buffer, 2 * BUFFER_SIZE - 1);
     close(fd);
     if (read_bytes < 0) {
         perror("smash error: read failed");
         return;
     }
-    DATA[2 * DATA_SIZE - 1] = '\0';
+    buffer[2 * BUFFER_SIZE - 1] = '\0';
 
     for (size_t a = 1; a < arguments.size(); a++) { // start from 1 to skip "unsetenv"
         const string &key = arguments[a];
         bool found = false;
 
         //here we go over all environments for each argument to be able to handle the error of the argument not existing
-        char *ptr = DATA;
-        while (ptr < DATA + read_bytes) {//while not in the end of the DATA
+        char *ptr = buffer;
+        while (ptr < buffer + read_bytes) {//while not in the end of the buffer
             string entry(ptr);
             size_t pos = entry.find('=');
             if (pos != string::npos) {
@@ -751,8 +764,8 @@ long WatchProcCommand::get_process_time() {
         return -1;
     }
 
-    char *DATA = new char[DATA_SIZE];
-    ssize_t read_bytes = read(fd, DATA, DATA_SIZE);
+    char *buffer = new char[BUFFER_SIZE];
+    ssize_t read_bytes = read(fd, buffer, BUFFER_SIZE);
 
     if (read_bytes == -1) {
         close(fd);
@@ -760,10 +773,10 @@ long WatchProcCommand::get_process_time() {
         return -1;
     }
 
-    DATA[DATA_SIZE - 1] = '\0';
-    close(fd); //date been put into DATA so can close file
+    buffer[BUFFER_SIZE - 1] = '\0';
+    close(fd); //date been put into buffer so can close file
 
-    char *start = strchr(DATA, ')'); //process name may have spaces
+    char *start = strchr(buffer, ')'); //process name may have spaces
     start++; //start from after the process name
 
     char *token = strtok(start, " ");
@@ -778,7 +791,7 @@ long WatchProcCommand::get_process_time() {
         field++;
     }
     long total_process_time = utime + stime;
-    delete[] DATA;
+    delete[] buffer;
     return total_process_time;
 }
 
@@ -791,22 +804,22 @@ long WatchProcCommand::get_system_time() {
         return -1;
     }
 
-    char *DATA = new char[DATA_SIZE];
-    ssize_t read_bytes = read(fd, DATA, DATA_SIZE);
+    char *buffer = new char[BUFFER_SIZE];
+    ssize_t read_bytes = read(fd, buffer, BUFFER_SIZE);
 
     if (read_bytes == -1) {
         close(fd);
-        delete[] DATA;
+        delete[] buffer;
         perror("smash error: watchproc: read failed");
         return -1;
     }
 
-    DATA[DATA_SIZE - 1] = '\n'; //null terminate the DATA
-    char *line = strtok(DATA, "\n"); //get the line that contains all cpu times (already summed)
+    buffer[BUFFER_SIZE - 1] = '\n'; //null terminate the buffer
+    char *line = strtok(buffer, "\n"); //get the line that contains all cpu times (already summed)
     long total_system_time = 0;
     while (line) { //loop to look for the line we need
         if (strncmp (line, "cpu ", 4) == 0) {
-            char *token = strtok(DATA, " ");
+            char *token = strtok(buffer, " ");
             int field = 0;
             while (token) {
                 if (field > 0) { // > 0 to skip the "cpu" field aka the name itself
@@ -819,7 +832,7 @@ long WatchProcCommand::get_system_time() {
             line = strtok(nullptr, "\n"); //incrementing the line
         }
     }
-    delete[] DATA;
+    delete[] buffer;
     close(fd);
     return total_system_time;
 }
@@ -833,19 +846,19 @@ long WatchProcCommand::get_memory_usage() {
         return -1;
     }
 
-    char *DATA = new char[DATA_SIZE];
-    ssize_t read_bytes = read(fd, DATA, DATA_SIZE);
+    char *buffer = new char[BUFFER_SIZE];
+    ssize_t read_bytes = read(fd, buffer, BUFFER_SIZE);
 
     if (read_bytes == -1) {
         close(fd);
-        delete[] DATA;
+        delete[] buffer;
         perror("smash error: watchproc: read failed");
         return -1;
     }
 
-    DATA[read_bytes] = '\0';
+    buffer[read_bytes] = '\0';
     long memory_usage = 0;
-    char *line = strtok(DATA, "\n");
+    char *line = strtok(buffer, "\n");
     while (line) {
         if (strncmp(line, "VmRSS:", 6) == 0) {
             memory_usage = atol(line + 7);
@@ -855,7 +868,7 @@ long WatchProcCommand::get_memory_usage() {
     }
 
     if (memory_usage == 0) {
-        line = strtok(DATA, "\n");
+        line = strtok(buffer, "\n");
         while (line) {
             if (strncmp(line, "VmSize:", 7) == 0) {
                 memory_usage = atol(line + 8);
@@ -864,7 +877,7 @@ long WatchProcCommand::get_memory_usage() {
             line = strtok(nullptr, "\n");
         }
     }
-    delete[] DATA;
+    delete[] buffer;
     close(fd);
     return memory_usage;
 }
@@ -987,17 +1000,17 @@ void WhoAmICommand::execute() {
         return;
     }
 
-    char DATA[1024];
+    char buffer[1024];
     ssize_t bytesRead;
     bool found = false;
-    size_t DATAPos = 0;
+    size_t bufferPos = 0;
 
-    while (!found && (bytesRead = read(fd, DATA + DATAPos, sizeof(DATA) - DATAPos - 1)) > 0) {
+    while (!found && (bytesRead = read(fd, buffer + bufferPos, sizeof(buffer) - bufferPos - 1)) > 0) {
         // Ensure null-termination for string operations
-        DATA[DATAPos + bytesRead] = '\0';
-        char *line = DATA;
+        buffer[bufferPos + bytesRead] = '\0';
+        char *line = buffer;
 
-        // Process each complete line in DATA
+        // Process each complete line in buffer
         char *lineEnd;
         while ((lineEnd = strchr(line, '\n')) != nullptr) {
             *lineEnd = '\0'; // Null-terminate the line
@@ -1023,9 +1036,9 @@ void WhoAmICommand::execute() {
 
         // Handle remaining partial line (if any)
         if (!found) {
-            DATAPos = strlen(line);
-            if (DATAPos > 0) {
-                memmove(DATA, line, DATAPos);
+            bufferPos = strlen(line);
+            if (bufferPos > 0) {
+                memmove(buffer, line, bufferPos);
             }
         }
     }
@@ -1042,9 +1055,6 @@ void WhoAmICommand::execute() {
 
     close(fd);
 }
-
-// Fetch IP address using low-level system calls
-
 
 PipeCommand::PipeCommand(const char *cmd_line) : Command(cmd_line) {}
 
@@ -1123,8 +1133,6 @@ void PipeCommand::execute() {
     waitpid(pid1, nullptr, 0);  // Wait for both child processes to finish
     waitpid(pid2, nullptr, 0);
 }
-
-
 
 static bool getSubnetmask(const string &interface, string &subnetMask) {
     int sock = socket(AF_INET, SOCK_DGRAM, 0);
