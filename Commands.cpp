@@ -409,7 +409,7 @@ void JobsList::addJob(pid_t pid, ExternalCommand *cmd, bool isStopped) {
 void JobsList::printJobsList() {
     removeFinishedJobs();
     for (auto &job: job_entries_vec_in_jobslist) {
-        cout << "[" << job->JobId << "]" << job->cmd->getOriginalCmdLine() << endl;
+        cout << "[" << job->JobId << "] " << job->cmd->getOriginalCmdLine() << endl;
     }
 }
 
@@ -522,7 +522,7 @@ void fgCommand::execute() {
     if (pid == 0) {
         return;
     }
-    cout << Jobs->getJobById(JobId)->cmd->getCmdLine() << " " << pid << endl;
+    cout << Jobs->getJobById(JobId)->cmd->getOriginalCmdLine() << " " << pid << endl;
     SmallShell::getInstance().setcurrFgCmd(pid);
     waitpid(pid, nullptr, 0);
     SmallShell::getInstance().setcurrFgCmd(-1);
@@ -534,7 +534,7 @@ QuitCommand::QuitCommand(const char *cmd_line, JobsList *jobs) : BuiltInCommand(
 void QuitCommand::execute() {
     Jobs->removeFinishedJobs();
     if (arguments.size() > 1 && arguments[1] == "kill") {
-        cout << "sending SIGKILL signal to " << Jobs->getNumOfJobs() << " jobs:" << endl;
+        cout << "smash: sending SIGKILL signal to " << Jobs->getNumOfJobs() << " jobs:" << endl;
         Jobs->printAllJobsForQUIT();
         Jobs->killAllJobs();
     }
